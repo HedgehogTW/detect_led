@@ -44,10 +44,10 @@ kernel3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 old_blob_frame = None
 led_on = False
 
-cen_lst = []
+# cen_lst = []
 blob_lst = []
-color_lst = []
-bounding_lst = []
+# color_lst = []
+# bounding_lst = []
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
@@ -85,15 +85,17 @@ def find_mode(data, bw):
 def detect_blob_color(frame, blob_lst, mask_led):
 
     img_b, img_g, img_r = cv2.split(frame)  
-    color_lst = []
-    bounding_lst = []
+    # color_lst = []
+    # bounding_lst = []
 
-    for i, cnt in enumerate(blob_lst):
+    for i, bbdict in enumerate(blob_lst):
+        box = bbdict['box'] 
+        x = box[0]
+        y = box[1]
+        w = box[2]
+        h = box[3]
         mask_zero = np.zeros(mask_led.shape, dtype="uint8") 
-
-        x,y,w,h = cv2.boundingRect(cnt)
         cv2.rectangle(mask_zero,(x,y),(x+w,y+h),(255,255,255),-1)
-        bounding_lst.append((x,y,w,h))
 
         mask = mask_led & mask_zero
         pts_red = img_r[mask==255]
@@ -108,91 +110,103 @@ def detect_blob_color(frame, blob_lst, mask_led):
         print(mode_r, mode_g, mode_b)
 
         if mode_r > mode_g and mode_r > mode_b:
-            color_lst.append('red')
+            bbdict['color'] = 'red'
+            # color_lst.append('red')
         elif mode_b > mode_g and mode_b > mode_r:
-            color_lst.append('blue')
+            bbdict['color'] = 'blue'
+            # color_lst.append('blue')
         else: #if mode_g > mode_b and mode_g > mode_r:
-            color_lst.append('green')
+            bbdict['color'] = 'green'
+            # color_lst.append('green')
 
-    return color_lst, bounding_lst
+    # return color_lst, bounding_lst
 
-# def check_overlap(img_bin_ok):
-#     global cen_lst
-#     global old_blob_frame
+def check_overlap(img_bin_now):
+    numBlobs = len(blob_lst)
+    overlap = img_bin_now & old_blob_frame
+    _, contours, hierarchy = cv2.findContours(overlap, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    overlap_blobs = len(contours)
 
-#     numBlobs = len(cen_lst)
-#     overlap = img_bin_ok & old_blob_frame
-#     _, contours, hierarchy = cv2.findContours(overlap, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-#     overlap_blobs = len(contours)
+    if numBlobs ==overlap_blobs:
+        return True
+    else:
+        return False
 
-#     if numBlobs ==overlap_blobs:
-#         return True
-#     else:
-#         return False
-
-def track_blobs():
+def track_blobs(img_bin_now):
+    overlap = True
     if old_blob_frame is not None:
-        for b in bounding_lst:
-            x = b[0]
-            y = b[1]
-            w = b[2]
-            h = b[3]
-            rect = old_blob_frame[y:y+h, x:x+w]
-            cv2.rectangle(old_blob_frame,(x,y),(x+w,y+h),(255,255,255),1)
-            cv2.imshow("old_bin_frame", old_blob_frame)
+        for bbdict in blob_lst:
+            box = bbdict['box'] 
+            x = box[0]
+            y = box[1]
+            w = box[2]
+            h = box[3]
+            rect = img_bin_now[y:y+h, x:x+w]
+            cv2.rectangle(img_bin_now,(x,y),(x+w,y+h),(255,255,255),1)
+            cv2.imshow("old_bin_frame", img_bin_now)
             count = np.count_nonzero(rect)
-            print(b, count)
+            if count < blob_low:
+                overlap = False
+                print(bbdict['color'] + 'off')
 
+            # print(box, count)
+    return overlap
 
 
 def find_blobs(frame):
     global led_on
-    global cen_lst
+    # global cen_lst
     global blob_lst
-    global color_lst
-    global bounding_lst
+    # global color_lst
+    # global bounding_lst
     global old_blob_frame
 
 
     img_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     th, img_bin = cv2.threshold(img_gray, bright_th, 255, cv2.THRESH_BINARY)
     img_bin_op = cv2.morphologyEx(img_bin, cv2.MORPH_OPEN, kernel3)
-    img_bin_ok = cv2.morphologyEx(img_bin_op, cv2.MORPH_CLOSE, kernel13)
-    count = np.count_nonzero(img_bin_ok)
+    img_bin_now = cv2.morphologyEx(img_bin_op, cv2.MORPH_CLOSE, kernel13)
+    count = np.count_nonzero(img_bin_now)
 
     if count > blob_low:
         if led_on and old_blob_frame is not None:
-            track_blobs(img_bin_ok)
-            overlap = check_overlap(img_bin_ok)
+            overlap = track_blobs(img_bin_now)
+            # overlap = check_overlap(img_bin_now)
             if overlap:
-                old_blob_frame = img_bin_ok.copy()
+                old_blob_frame = img_bin_now.copy()
                 print('led_on overlap ---------------')
                 return
 
 
-        cen_lst = []
+        # cen_lst = []
         blob_lst = []
-        color_lst = []
-        bounding_lst = []
-
-        _, contours, hierarchy = cv2.findContours(img_bin_ok, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        # color_lst = []
+        # bounding_lst = []
+        cv2.imshow("img_bin_now", img_bin_now)
+        _, contours, hierarchy = cv2.findContours(img_bin_now, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         for con in contours:
             area = cv2.contourArea(con)
             print('area ', area)
             if blob_low < area < blob_up:
                 bbdict = {'con':None, 'cen':None, 'color':None,'box':None}
+                x,y,w,h = cv2.boundingRect(con)
                 bbdict['con'] = con
-                blob_lst.append(con)
+                bbdict['box'] = (x,y,w,h)
+                blob_lst.append(bbdict)
 
-        for con in blob_lst:
+        for blob in blob_lst:
+            con = blob['con']
             conarr = con.reshape(con.shape[0], 2)
             center = np.mean(conarr, axis = 0, dtype=np.float32)
-            cen_lst.append((center[0], center[1]))
+            # cen_lst.append((center[0], center[1]))
+            blob['cen']= (center[0], center[1])
+
 
         blobs = len(blob_lst)
         if blobs > 0:
-            color_lst, bounding_lst = detect_blob_color(frame, blob_lst, img_bin_op)
-            old_blob_frame = img_bin_ok.copy()
+            # color_lst, bounding_lst = detect_blob_color(frame, blob_lst, img_bin_op)
+            detect_blob_color(frame, blob_lst, img_bin_op)
+            old_blob_frame = img_bin_now.copy()
             led_on = True
         else:
             led_on = False
@@ -200,10 +214,10 @@ def find_blobs(frame):
 
     else:
         led_on = False
-        cen_lst = []
+        # cen_lst = []
         blob_lst = []
-        color_lst = []
-        bounding_lst = []
+        # color_lst = []
+        # bounding_lst = []
         old_blob_frame = None
 
     # return blob_lst, cen_lst, color_lst, bounding_lst 
@@ -314,22 +328,27 @@ def process_video(filename):
         
         # blob_lst, cen_lst, color_lst, bounding_lst  = find_blobs(frame)
         find_blobs(frame)
-        numBlobs = len(cen_lst)
+        numBlobs = len(blob_lst)
 
 
-        print('find_blobs:', numBlobs, cen_lst)  
-        print('color_lst:', color_lst)
+        print('find_blobs:', numBlobs)  
+
+        # print('color_lst:', color_lst)
 
         t2 = datetime.now()
         delta = t2 - t1
         print('{} Computation time takes {}'.format(frame_num, delta))
 
-        for i, b in enumerate(bounding_lst):
-            x = b[0]
-            y = b[1]
-            w = b[2]
-            h = b[3]            
-            cv2.putText(frame, color_lst[i], (x,y), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255))
+        for i, bbdict in enumerate(blob_lst):
+            box = bbdict['box'] 
+            x = box[0]
+            y = box[1]
+            w = box[2]
+            h = box[3]
+
+            print('color:', bbdict['color'])
+           
+            cv2.putText(frame, bbdict['color'], (x,y), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255))
             cv2.rectangle(frame,(x,y),(x+w,y+h),(255,255,255),1)
         # cv2.imwrite('many_result.jpg',frame)
 
