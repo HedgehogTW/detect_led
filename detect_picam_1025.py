@@ -10,15 +10,33 @@ import numpy as np
 from numpy import linalg as LA
 from datetime import datetime
 import scipy.stats
-# from scipy import stats
-
-import sys    
-import time   
-
+import os, sys    
+import time  
+from time import localtime, strftime 
+import logging
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
 
-bright_th = 10 #50
+from sys import platform as _platform
+if _platform == "linux" or _platform == "linux2": # linux
+    from picamera import PiCamera
+    from picamera.array import PiRGBArray
+    disable_picam = False
+    disable_mqtt = False
+    show_debugmsg = False
+    show_image = False
+    wait_time_ms = 10
+else: # PC, read video
+    disable_picam = True
+    disable_mqtt = True
+    show_debugmsg = True
+    show_image = True
+    wait_time_ms = 0
+
+enable_record = False
+
+
+bright_th = 60 #50
 blob_low = 35
 blob_up = 700
 cc_area_low = 10
@@ -43,13 +61,11 @@ kernel3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 led_on = False
 blob_lst = []
 
-disable_mqtt = False
-show_image = False
-show_debugmsg = False
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
+    logging.info("MQTT: Connected with result code "+str(rc))
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
@@ -57,15 +73,17 @@ def on_connect(client, userdata, flags, rc):
 
 def on_disconnect(client, userdata,rc=0):
     print("DisConnected result code "+str(rc))
+    logging.info("MQTT: DisConnected result code "+str(rc))
     client.loop_stop()
 
 # The callback for when a PUBLISH message is received from the server.
 def on_message(client, userdata, msg):
     print('\ton_message:', msg.topic+" "+str(msg.payload))
+    logging.info('\tMQTT: on_message:'+ msg.topic+" "+str(msg.payload))
 	
 def on_publish(client, userdata, mid):
     print('\ton_publish:', mid)
-    
+    logging.info('\tMQTT: on_publish:{}'.format(mid))
 
 
 def find_mode(data, bw):
@@ -83,7 +101,10 @@ def find_mode(data, bw):
 
 def detect_blob_color(frame, blob_lst, mask_led):
 
-    img_b, img_g, img_r = cv2.split(frame)  
+    if disable_picam:
+        img_b, img_g, img_r = cv2.split(frame)  
+    else:
+        img_r, img_g, img_b = cv2.split(frame)  
     # color_lst = []
     # bounding_lst = []
 
@@ -106,7 +127,9 @@ def detect_blob_color(frame, blob_lst, mask_led):
         
         pts_blue = img_b[mask==255]
         mode_b = find_mode(pts_blue, 3)
-        print(mode_r, mode_g, mode_b)
+
+        if show_debugmsg:
+            print('R G B:', mode_r, mode_g, mode_b)
 
         if mode_r >210 and mode_g > 210 and mode_b > 210:
             bbdict['color'] = 'white'
@@ -177,20 +200,23 @@ def find_blobs(frame):
 
 
     blob_lst = []
-    cv2.imshow("img_bin_now", img_bin_now)
+    # cv2.imshow("img_bin_now", img_bin_now)
     _, contours, hierarchy = cv2.findContours(img_bin_now, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     for con in contours:
         area = cv2.contourArea(con)
         x,y,w,h = cv2.boundingRect(con)
+        
         if show_image:
             cv2.rectangle(frame,(x,y),(x+w,y+h),(255,0,255),1)
 
+        logging.info('blob area {}, boundingRect (x{},y{},w{},h{})'.format(area,x,y,w,h))
         if show_debugmsg:
             print('blob area ', area, ', boundingRect (x,y,w,h):', x,y,w,h)
 
         if blob_low < area < blob_up:
             bbdict = {'con':None, 'cen':None, 'color':None,'box':None, 'on':True, 'grid':None, 'area':0}
 
+            
             bbdict['area'] = area
             bbdict['con'] = con
             bbdict['box'] = (x,y,w,h)
@@ -207,7 +233,7 @@ def find_blobs(frame):
     blobs = len(blob_lst)
     if blobs > 0:
         # color_lst, bounding_lst = detect_blob_color(frame, blob_lst, img_bin_op)
-        blob_lst = detect_blob_color(frame, blob_lst, img_bin_now)
+        detect_blob_color(frame, blob_lst, img_bin_now)
         # old_blob_frame = img_bin_now.copy()
         led_on = True
     else:
@@ -237,17 +263,22 @@ def process_frame(frame, outfile):
 
     if show_debugmsg:
         print('find_blobs:', numBlobs)  
+    logging.info('find_blobs:{}'.format(numBlobs))
 
     for j, blob in enumerate(blob_lst):       
-        payload = "LED ON {}--{} {}".format(blob['color'], blob['grid'], blob['area'])    
+        payload = "LED ON {}--{} {}".format(blob['color'], blob['grid'], blob['area'])   
+        logging.info(payload) 
         if not disable_mqtt:  
+            logging.info('sending mqtt ...')            
+            if show_debugmsg:            
+                print('sending mqtt ...')
             client.publish(mqtt_topic, payload, qos)
 
         if show_debugmsg:
             print(payload)
 
         print('{}, {}, {}, {}'.format(frame_num, j, blob['area'], blob['color']), file=outfile)
-
+        # logging.info('{}, {}, {}, {}'.format(frame_num, j, blob['area'], blob['color']))
 
     t2 = datetime.now()
     delta = t2 - t1
@@ -268,7 +299,7 @@ def process_frame(frame, outfile):
 
     
         cv2.imshow("frame", frame)
-        key = cv2.waitKey(0)
+        key = cv2.waitKey(wait_time_ms)
         if key == 27:
             cv2.destroyAllWindows()
             # break
@@ -276,7 +307,78 @@ def process_frame(frame, outfile):
 
     return terminate
 
+def process_picam():
+    global frame_num
+    global fps
+    global xgap
+    global ygap
+    
+    
+    with PiCamera() as camera:
+        camera.awb_mode = 'off'
+        camera.awb_gains = (1.7,1.7)
+        camera.exposure_mode =  'off'
+        camera.iso = 100
+        camera.resolution = (1296,972)
+        camera.zoom = (0,0.5,0.5,0.5)
+        camera.framerate = 5
+        camera.shutter_speed = 1000
+        if enable_record:
+            camera.start_recording('/home/pi/detect_led/picam_rec.h264')
+        # camera.annotate_text = "isoAWBoffEV-1"      
 
+        fps = camera.framerate
+
+        print('awb_gains {}, iso {} shutter_speed {}'.format(camera.awb_gains, camera.iso, camera.shutter_speed))
+
+        with PiRGBArray(camera) as rawCapture:
+            camera.capture(rawCapture, format="bgr")
+            width = rawCapture.array.shape[1]
+            height = rawCapture.array.shape[0]
+            xgap = width / num_grid 
+            ygap = height / num_grid 
+
+            print('width {}, height {} fps {}'.format(width, height, fps))
+            logging.info('width {}, height {} fps {}'.format(width, height, fps))
+
+            rawCapture.truncate(0)    
+            outfile = open('area.csv', 'w')
+            while True:
+                try:
+                    frame_num += 1
+                    # if frame_num % sampling_rate:
+                        # continue
+
+                    camera.capture(rawCapture, format="bgr") #ambilgambar
+
+                    # if show_debugmsg:
+                    #     print('Captured %dx%d image, (%02d:%02d:%02d.%d)' % (
+                    #         rawCapture.array.shape[1], rawCapture.array.shape[0],
+                    #         t1.hour, t1.minute, t1.second, t1.microsecond/1000))
+                    
+
+                    frame = rawCapture.array
+                    terminate = process_frame(frame, outfile)
+                    if terminate:
+                        break
+
+                    # cv2.imwrite('frame_%04d.jpg'%frame_num, frame)
+                    if show_image:
+                        cv2.imshow('image',frame)
+                        # cv2.imwrite('test.jpg', frame)
+                    rawCapture.truncate(0)
+                except:
+                    logging.debug("Except: Something else went wrong")
+                    print("Except: Something else went wrong") 
+
+                    
+                time.sleep(0.5)
+
+            if enable_record:
+                camera.stop_recording()
+
+            outfile.close()
+        # camera.stop_preview()
 
 def process_video_file(filename):
     global frame_num
@@ -302,7 +404,6 @@ def process_video_file(filename):
     ygap = height / num_grid ;
         
     outfile = open('area.csv', 'w')
-
     while True:
 
         bVideoRead, frame = cap.read()  
@@ -313,40 +414,63 @@ def process_video_file(filename):
 
         if frame_num % sampling_rate:
             continue
-        cv2.imwrite('frame.jpg',frame)
+        # cv2.imwrite('test.jpg',frame)
         # frame = cv2.imread('many.jpg')
 
         terminate = process_frame(frame, outfile)
         if terminate:
             break
 
-
     outfile.close()
-    print('End')
+
             
 def main():
     global client
     global disable_mqtt
+    global disable_picam
+    global enable_record
     global show_image
     global show_debugmsg
 
     parser = argparse.ArgumentParser(description='detect led')   
     parser.add_argument('--disable_mqtt', action="store_true", help='disable mqtt')
+    parser.add_argument('--disable_picam', action="store_true", help='disable picam')
+    parser.add_argument('--enable_record', action="store_true", help='enable picam record')
     parser.add_argument('--show_image', action="store_true", help='show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", help='show debug message')
-
     args = parser.parse_args()
-
-    disable_mqtt = False
-    show_image = False
-    show_debugmsg = False
+    
+    enable_picam_record = False
 
     if args.disable_mqtt:
-        disable_mqtt = True           
+        disable_mqtt = True
+    if args.disable_picam:
+        disable_picam = True        
+    if args.enable_record:
+        enable_record = True              
     if args.show_image:
         show_image = True
     if args.show_debugmsg:
         show_debugmsg = True
+
+    logpath = os.path.dirname('log/') 
+    if not os.path.exists(logpath):
+        os.makedirs(logpath)
+        print('no output log path, create one') 
+
+    fname = strftime("%Y-%m-%d-%H%M%S", localtime())
+    fname += '.log'
+    logging_file = os.path.join(logpath, fname)
+
+
+    print("Logging to", logging_file)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s : %(levelname)s : %(message)s',
+        filename = logging_file,
+        filemode = 'w',
+    )
+    logging.info("Start of the program")
 
 
     if not disable_mqtt:
@@ -357,8 +481,13 @@ def main():
         
         client.connect("140.138.178.116", 1883, 60)
         client.loop_start()
+        client.publish(mqtt_topic, 'video start', qos)
     
-    process_video_file('1 (1).h264')
+
+    if disable_picam:
+        process_video_file('1 (2).h264')
+    else:
+        process_picam()
     
     if not disable_mqtt:
         client.publish(mqtt_topic, 'video end', qos)
