@@ -88,19 +88,20 @@ def on_publish(client, userdata, mid):
 
 
 def find_mode(data, bw):
-    try:
-        kde_r = scipy.stats.gaussian_kde(data, bw_method=bw) 
-        maxP = 0
-        mode = 0
-        for i in range(256):
-            p = kde_r.evaluate(i)
-            # print(i, p)
-            if p >= maxP:
-                maxP = p
-                mode = i  
-    except:
-        mode = np.median(data)
+    # try:
+    #     kde_r = scipy.stats.gaussian_kde(data, bw_method=bw) 
+    #     maxP = 0
+    #     mode = 0
+    #     for i in range(256):
+    #         p = kde_r.evaluate(i)
+    #         # print(i, p)
+    #         if p >= maxP:
+    #             maxP = p
+    #             mode = i  
+    # except:
+    #     mode = np.median(data)
 
+    mode = np.median(data)
     return mode
 
 def detect_blob_color(frame, blob_lst, mask_led):
@@ -464,6 +465,7 @@ def main():
     parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
+    parser.add_argument('-f', action="store", dest='video_name', default='1 (2).h264', help='input video file name')
     args = parser.parse_args()
     
     print('disable_mqtt: ', args.disable_mqtt)
@@ -507,7 +509,8 @@ def main():
     
 
     if args.disable_picam:
-        process_video_file('1 (2).h264')
+        print('process video file:', args.video_name)
+        process_video_file(args.video_name)
     else:
         process_picam()
     
