@@ -261,7 +261,7 @@ def locate_position():
         # client.publish(mqtt_topic, payload, qos)
         # print(payload)
 
-def process_frame(frame, outfile):
+def process_frame(frame):
     t1 = datetime.now()
     numBlobs = find_blobs(frame)
     locate_position()
@@ -282,7 +282,7 @@ def process_frame(frame, outfile):
         if args.show_debugmsg:
             print(payload)
 
-        print('{}, {}, {}, {}'.format(frame_num, j, blob['area'], blob['color']), file=outfile)
+        # print('{}, {}, {}, {}'.format(frame_num, j, blob['area'], blob['color']), file=outfile)
         # logging.info('{}, {}, {}, {}'.format(frame_num, j, blob['area'], blob['color']))
 
     t2 = datetime.now()
@@ -347,7 +347,7 @@ def process_picam():
             logging.info('width {}, height {} fps {}'.format(width, height, fps))
 
             rawCapture.truncate(0)    
-            outfile = open('area.csv', 'w')
+            # outfile = open('area.csv', 'w')
             while True:
                 # try:
                 frame_num += 1
@@ -363,7 +363,7 @@ def process_picam():
                 
 
                 frame = rawCapture.array
-                terminate = process_frame(frame, outfile)
+                terminate = process_frame(frame)
                 if terminate:
                     break
 
@@ -382,7 +382,7 @@ def process_picam():
             if args.enable_record:
                 camera.stop_recording()
 
-            outfile.close()
+            # outfile.close()
         # camera.stop_preview()
 
 def process_video_file(filename):
@@ -408,7 +408,7 @@ def process_video_file(filename):
     xgap = width / num_grid ;
     ygap = height / num_grid ;
         
-    outfile = open('area.csv', 'w')
+    # outfile = open('area.csv', 'w')
     while True:
 
         bVideoRead, frame = cap.read()  
@@ -422,11 +422,11 @@ def process_video_file(filename):
         # cv2.imwrite('test.jpg',frame)
         # frame = cv2.imread('many.jpg')
 
-        terminate = process_frame(frame, outfile)
+        terminate = process_frame(frame)
         if terminate:
             break
 
-    outfile.close()
+    # outfile.close()
 
    
 def clean_oldlog_files(logpath):
@@ -465,7 +465,7 @@ def main():
     parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
-    parser.add_argument('-f', action="store", dest='video_name', default='1 (2).h264', help='input video file name')
+    parser.add_argument('-f', action="store", dest='video_name', default='2_(1).h264', help='input video file name')
     args = parser.parse_args()
     
     print('disable_mqtt: ', args.disable_mqtt)
