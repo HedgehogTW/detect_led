@@ -191,6 +191,19 @@ def find_blobs(frame):
         old_blob_frame = None
         return 0
 
+    # if led_on:
+    #     overlap = track_blobs(img_bin_now)
+    #     if overlap:
+    #         # old_blob_frame = img_bin_now.copy()
+    #         print('led_on overlap ---------------')
+    #     else:
+    #         print('no overlap ---------------')
+    #         for blob in blob_lst:
+    #             if blob['on'] ==False:
+    #                 print(blob['color'] + ' off')
+
+
+
     blob_lst = []
     # cv2.imshow("img_bin_now", img_bin_now)
     _, contours, hierarchy = cv2.findContours(img_bin_now, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
@@ -242,12 +255,14 @@ def locate_position():
         c = int(center[0])
         str_position = '{}{}'.format(chr(65+int(r/ ygap)), int(c/ xgap))
         blob['grid'] = str_position
+        
+        
+        # payload = "LED ON {}--({},{}), {}".format(blob['color'], c, r, str_position)      
+        # client.publish(mqtt_topic, payload, qos)
+        # print(payload)
 
 def process_frame(frame):
-    global frame_num
     t1 = datetime.now()
-    frame0 = frame.copy()
-
     numBlobs = find_blobs(frame)
     locate_position()
 
@@ -292,11 +307,8 @@ def process_frame(frame):
         key = cv2.waitKey(wait_time_ms)
         if key == 27:
             cv2.destroyAllWindows()
+            # break
             terminate = True
-        elif key==ord('s'):
-            outname = 'frame_{:04d}.png'.format(frame_num)
-            cv2.imwrite(outname, frame0)
-            print('save ', outname)
 
     return terminate
 
