@@ -25,5 +25,5 @@ def detect_grid(frame):
 
 
 
-frame = cv2.imread('grid_0012.png')
+frame = cv2.imread('frame_0040.png')
 detect_grid(frame)
