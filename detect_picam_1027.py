@@ -17,6 +17,7 @@ from time import localtime, strftime
 import logging
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
+import grid
 
 from sys import platform as _platform
 if _platform == "linux" or _platform == "linux2": # linux
@@ -47,9 +48,9 @@ cc_dist = 30
 
 fps = 0
 frame_num = 0
-num_grid = 8
-xgap = 0
-ygap = 0
+# num_grid = 8
+# xgap = 0
+# ygap = 0
 mqtt_topic = 'cclee/led'
 client = None
 qos = 0
@@ -63,6 +64,8 @@ led_on = False
 blob_lst = []
 
 
+coord_dict = None
+cell_list = None
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
@@ -238,10 +241,17 @@ def locate_position():
     global blob_lst   
     for j, blob in enumerate(blob_lst):
         center = blob['cen']
-        r = int(center[1])
-        c = int(center[0])
-        str_position = '{}{}'.format(chr(65+int(r/ ygap)), int(c/ xgap))
-        blob['grid'] = str_position
+        r = int(center[1]/2)
+        c = int(center[0]/2)
+        for i, poly in enumerate(cell_list):
+            inCell = cv2.pointPolygonTest(poly,(c,r),False)
+            if inCell >=1:
+                coord = coord_dict[i]
+                str_position = '[{}]'.format(coord)
+                blob['grid'] = str_position
+                logging.info('incell:{}'.format(i))
+                if args.show_debugmsg:
+                    print('incell:', i)
 
 def process_frame(frame):
     global frame_num
@@ -256,7 +266,7 @@ def process_frame(frame):
     logging.info('find_blobs:{}'.format(numBlobs))
 
     for j, blob in enumerate(blob_lst):       
-        payload = "LED ON {}--{} {}".format(blob['color'], blob['grid'], blob['area'])   
+        payload = "LED ON {}--{} {}".format(blob['grid'], blob['area'], blob['color'])   
         logging.info(payload) 
         if not args.disable_mqtt:  
             logging.info('sending mqtt ...')            
@@ -303,8 +313,8 @@ def process_frame(frame):
 def process_picam():
     global frame_num
     global fps
-    global xgap
-    global ygap
+    # global xgap
+    # global ygap
     
     
     with PiCamera() as camera:
@@ -328,8 +338,8 @@ def process_picam():
             camera.capture(rawCapture, format="bgr")
             width = rawCapture.array.shape[1]
             height = rawCapture.array.shape[0]
-            xgap = width / num_grid 
-            ygap = height / num_grid 
+            # xgap = width / num_grid 
+            # ygap = height / num_grid 
 
             print('width {}, height {} fps {}'.format(width, height, fps))
             logging.info('width {}, height {} fps {}'.format(width, height, fps))
@@ -376,8 +386,8 @@ def process_picam():
 def process_video_file(filename):
     global frame_num
     global fps
-    global xgap
-    global ygap
+    # global xgap
+    # global ygap
     
     print('process video:', filename)
     cap = cv2.VideoCapture(filename)
@@ -393,8 +403,8 @@ def process_video_file(filename):
 
     print('width {}, height {} fps {}'.format(width, height, fps))
 
-    xgap = width / num_grid ;
-    ygap = height / num_grid ;
+    # xgap = width / num_grid ;
+    # ygap = height / num_grid ;
         
     # outfile = open('area.csv', 'w')
     while True:
@@ -442,6 +452,8 @@ def main():
     global ini_show_image
     global ini_show_debugmsg
     global args    
+    global coord_dict
+    global cell_list
 
     parser = argparse.ArgumentParser(description='detect led')   
     parser.add_argument('--disable_mqtt', action="store_true", dest='disable_mqtt', default=ini_disable_mqtt, help='disable mqtt')
@@ -495,6 +507,16 @@ def main():
         client.loop_start()
         client.publish(mqtt_topic, 'video start', qos)
     
+
+    grid_img = cv2.imread('grid_img.png')
+    coord_dict, cell_list = grid.detect_grid(grid_img)
+    logging.info("coord_dict: {}".format(coord_dict))
+    ss = '# of coord_dict:{}, # of cells:{}'.format(len(coord_dict), len(cell_list))
+    logging.info(ss)
+    if args.show_debugmsg:
+        print(coord_dict)
+        print(ss)
+
 
     if args.disable_picam:
         print('process video file:', args.video_name)
