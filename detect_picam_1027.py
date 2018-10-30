@@ -63,7 +63,8 @@ kernel3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 led_on = False
 blob_lst = []
 
-
+posimg = None
+posimg1 = None
 coord_dict = None
 cell_list = None
 # The callback for when the client receives a CONNACK response from the server.
@@ -239,10 +240,18 @@ def find_blobs(frame):
     
 def locate_position():
     global blob_lst   
+    global posimg1
+
     for j, blob in enumerate(blob_lst):
         center = blob['cen']
         r = int(center[1]/2)
         c = int(center[0]/2)
+
+        if args.show_posimg and posimg is not None:
+            posimg1 = posimg.copy()
+            cv2.circle(posimg1,(c,r),5,(0, 0, 255), -1)
+
+
         for i, poly in enumerate(cell_list):
             inCell = cv2.pointPolygonTest(poly,(c,r),False)
             if inCell >=1:
@@ -299,6 +308,13 @@ def process_frame(frame):
 
     
         cv2.imshow("frame", frame)
+        if args.show_posimg and posimg1 is not None:
+            if numBlobs >0:
+                cv2.imshow("position image", posimg1)
+            else:
+                cv2.imshow("position image", posimg)
+
+
         key = cv2.waitKey(wait_time_ms)
         if key == 27:
             cv2.destroyAllWindows()
@@ -454,6 +470,7 @@ def main():
     global args    
     global coord_dict
     global cell_list
+    global posimg
 
     parser = argparse.ArgumentParser(description='detect led')   
     parser.add_argument('--disable_mqtt', action="store_true", dest='disable_mqtt', default=ini_disable_mqtt, help='disable mqtt')
@@ -466,13 +483,15 @@ def main():
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
     parser.add_argument('-f', action="store", dest='video_name', default='2_(1).h264', help='input video file name')
+    parser.add_argument('--show_posimg', action="store_true", dest='show_posimg', default=False, help='show position image')
     args = parser.parse_args()
     
     print('disable_mqtt: ', args.disable_mqtt)
     print('disable_picam:', args.disable_picam)
     print('enable_record:', args.enable_record)
     print('show_image:   ', args.show_image)
-    print('show_debugmsg:', args.show_debugmsg)                
+    print('show_debugmsg:', args.show_debugmsg)    
+    print('show_posimg:'  , args.show_posimg)             
 
     logpath = os.path.dirname('log/') 
     if not os.path.exists(logpath):
@@ -515,8 +534,10 @@ def main():
     logging.info(ss)
     if args.show_debugmsg:
         print(coord_dict)
-        print(ss)
+    print(ss)
 
+    if args.show_posimg:
+        posimg = cv2.imread('grid_detection.png')
 
     if args.disable_picam:
         print('process video file:', args.video_name)
