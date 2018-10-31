@@ -63,6 +63,7 @@ def detect_grid(frame, debug=False):
         cell_list.append(approx)
         
 
+    # print(center_lst)
 
     cell_center_arr = np.array(center_lst)
     cell_xx = cell_center_arr[:,0]
@@ -146,7 +147,7 @@ def detect_grid(frame, debug=False):
     cv2.imwrite('grid_detection.png', small)
 
 
-    return coord_dict, cell_list
+    return coord_dict, cell_list, center_lst
 
 if __name__ == "__main__":
     frame = cv2.imread('grid_img.png')

@@ -11,6 +11,7 @@ from numpy import linalg as LA
 
 from datetime import datetime
 import scipy.stats
+from scipy.spatial.distance import cdist
 import os, sys    
 import time  
 from time import localtime, strftime 
@@ -67,6 +68,8 @@ posimg = None
 posimg1 = None
 coord_dict = None
 cell_list = None
+center_lst = None
+
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code "+str(rc))
@@ -251,16 +254,30 @@ def locate_position():
             posimg1 = posimg.copy()
             cv2.circle(posimg1,(c,r),5,(0, 0, 255), -1)
 
-
+        bFindCell = False
         for i, poly in enumerate(cell_list):
             inCell = cv2.pointPolygonTest(poly,(c,r),False)
             if inCell >=1:
+                bFindCell = True
                 coord = coord_dict[i]
                 str_position = '[{}]'.format(coord)
                 blob['grid'] = str_position
                 logging.info('incell:{}'.format(i))
                 if args.show_debugmsg:
                     print('incell:', i)
+                break
+
+        if bFindCell==False:
+            others = np.array(center_lst)
+            pt = np.array([[c, r]])
+            distances = cdist(pt, others)
+            i = distances.argmin()
+            coord = coord_dict[i]
+            str_position = '[{}]'.format(coord)
+            blob['grid'] = str_position
+            logging.info('incell:{}'.format(i))            
+            print('incell:', i)
+
 
 def process_frame(frame):
     global frame_num
@@ -470,6 +487,7 @@ def main():
     global args    
     global coord_dict
     global cell_list
+    global center_lst
     global posimg
 
     parser = argparse.ArgumentParser(description='detect led')   
@@ -528,7 +546,12 @@ def main():
     
 
     grid_img = cv2.imread('grid_img.png')
-    coord_dict, cell_list = grid.detect_grid(grid_img)
+    if grid_img is None:
+        print('imread grid_img.png failed')
+        logging.debug('imread grid_img.png failed')
+        return
+
+    coord_dict, cell_list, center_lst = grid.detect_grid(grid_img)
     logging.info("coord_dict: {}".format(coord_dict))
     ss = '# of coord_dict:{}, # of cells:{}'.format(len(coord_dict), len(cell_list))
     logging.info(ss)
