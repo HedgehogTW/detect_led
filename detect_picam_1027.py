@@ -313,18 +313,27 @@ def process_frame(frame):
 
     terminate = False
     if args.show_image:
+        width = int(frame.shape[1] * 0.5)
+        height = int(frame.shape[0] * 0.5)
+        dim = (width, height) 
+        resized = cv2.resize(frame, dim) 
+        cv2.drawContours(resized, cell_list, -1, (0,255,0), 1)
+
         for i, bbdict in enumerate(blob_lst):
             box = bbdict['box'] 
-            x = box[0]
-            y = box[1]
+            x = box[0]//2
+            y = box[1]//2
             w = box[2]
             h = box[3]
-            cv2.putText(frame, bbdict['color'], (x,y), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255))
-            cv2.rectangle(frame,(x,y),(x+w,y+h),(255,255,255),1)
+            cv2.putText(resized, bbdict['color'], (x,y-10), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 255))
+            cv2.rectangle(resized,(x,y),(x+w,y+h),(255,255,255),1)
         # cv2.imwrite('many_result.jpg',frame)
 
-    
-        cv2.imshow("frame", frame)
+
+            cv2.putText(resized, bbdict['grid'], (x+10,y+10), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 255, 0))
+
+        cv2.imshow("resized frame", resized)
+
         if args.show_posimg and posimg1 is not None:
             if numBlobs >0:
                 cv2.imshow("position image", posimg1)
@@ -500,7 +509,7 @@ def main():
     parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
-    parser.add_argument('-f', action="store", dest='video_name', default='2_(1).h264', help='input video file name')
+    parser.add_argument('-f', action="store", dest='video_name', default='1.h264', help='input video file name')
     parser.add_argument('--show_posimg', action="store_true", dest='show_posimg', default=False, help='show position image')
     args = parser.parse_args()
     
