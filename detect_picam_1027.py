@@ -466,6 +466,8 @@ def process_video_file(filename):
         if terminate:
             break
 
+    cap.release()
+    
     # outfile.close()
 
    
@@ -560,7 +562,7 @@ def main():
         logging.debug('imread grid_img.png failed')
         return
 
-    coord_dict, cell_list, center_lst = grid.detect_grid(grid_img)
+    coord_dict, cell_list, center_lst = grid.detect_grid(grid_img, logging, args.show_debugmsg)
     logging.info("coord_dict: {}".format(coord_dict))
     ss = '# of coord_dict:{}, # of cells:{}'.format(len(coord_dict), len(cell_list))
     logging.info(ss)

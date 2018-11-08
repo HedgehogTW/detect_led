@@ -1,7 +1,14 @@
 import cv2
 import numpy as np
+import argparse
+import logging
+import os, sys  
+import time  
+from time import localtime, strftime 
 
-kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+# 底下是 detect_grid 參數
+grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 th_block_size = 33
 th_c = -20
 cell_area_min = 1200
@@ -11,9 +18,28 @@ cell_ratio_max = 0.55
 cell_compact_th = 50
 polygon_dist = 10
 nBins = 12
-# cell_map = np.full((20, 6), -1, dtype=int)
 
-def detect_grid(frame, debug=False):
+# 底下是 detect_landmark 參數
+th_mark = 240
+
+
+def detect_landmark(frame, logging, debug=False):
+    small = cv2.pyrDown(frame)
+    img_b, img_g, img_r = cv2.split(small) 
+    th, bin_b = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY) 
+    th, bin_g = cv2.threshold(img_g, th_mark, 255, cv2.THRESH_BINARY)
+    th, bin_r = cv2.threshold(img_r, th_mark, 255, cv2.THRESH_BINARY)
+    landmark = bin_b & bin_g & bin_r
+    median = cv2.medianBlur(landmark, 5)
+    landmark = cv2.dilate(median, landmark_kernel, iterations = 1)
+
+    if debug:
+        cv2.imshow('landmark',landmark)
+        # cv2.imshow('bin_color',bin_color)
+        key = cv2.waitKey(0)    
+
+
+def detect_grid(frame, logging, debug=False):
     small = cv2.pyrDown(frame)
     gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
     # lower_line = np.array([12,0,128])
@@ -23,7 +49,7 @@ def detect_grid(frame, debug=False):
 
 
     bin_img = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,th_block_size,th_c)
-    bin_img = cv2.dilate(bin_img, kernel, iterations = 1)
+    bin_img = cv2.dilate(bin_img, grid_kernel, iterations = 1)
     bin_img = 255 - bin_img
 
 
@@ -150,5 +176,55 @@ def detect_grid(frame, debug=False):
     return coord_dict, cell_list, center_lst
 
 if __name__ == "__main__":
-    frame = cv2.imread('grid_img.png')
-    detect_grid(frame)
+    ini_show_debugmsg = True
+    ini_show_image = True
+
+    parser = argparse.ArgumentParser(description='grid')   
+    parser.add_argument('--show_image', action="store_true", dest='show_image', default=ini_show_image, help='show debug image')
+    parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
+    parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
+    parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
+    parser.add_argument('-f', action="store", dest='video_name', default='gridled_1(1).h264', help='input video file name')
+    args = parser.parse_args()
+
+
+    logpath = os.path.dirname('log/') 
+    if not os.path.exists(logpath):
+        os.makedirs(logpath)
+        print('no output log path, create one') 
+
+    fname = strftime("%Y-%m-%d-%H%M%S", localtime())
+    fname += '.log'
+    logging_file = os.path.join(logpath, fname)
+
+
+    print("Logging to", logging_file)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s : %(levelname)s : %(message)s',
+        filename = logging_file,
+        filemode = 'w',
+    )
+    logging.info("Start of the grid detection")
+
+    print('read grid video:', args.video_name)
+    cap = cv2.VideoCapture(args.video_name)
+    bOpenVideo = cap.isOpened()
+    print('Open grid video: {0} '.format(bOpenVideo))
+    if bOpenVideo == True:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        print('width {}, height {} fps {}'.format(width, height, fps))
+        for i in range(10):
+            bVideoRead, frame = cap.read()  
+        cap.release()
+
+        cv2.imwrite('grid_sample.jpg', frame)
+
+        # frame = cv2.imread('grid_img.png')
+        detect_landmark(frame, logging, args.show_debugmsg)
+
+        detect_grid(frame, logging, args.show_debugmsg)
