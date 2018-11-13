@@ -5,10 +5,11 @@ import logging
 import os, sys  
 import time  
 from time import localtime, strftime 
+# import pathlib
 
 # 底下是 detect_grid 參數
 grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
-landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
+landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
 th_block_size = 33
 th_c = -20
 cell_area_min = 1200
@@ -29,8 +30,8 @@ def detect_landmark(frame, logging, debug=False):
     th, bin_b = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY) 
     th, bin_g = cv2.threshold(img_g, th_mark, 255, cv2.THRESH_BINARY)
     th, bin_r = cv2.threshold(img_r, th_mark, 255, cv2.THRESH_BINARY)
-    landmark = bin_b & bin_g & bin_r
-    median = cv2.medianBlur(landmark, 5)
+    landmark = bin_b & bin_g #& bin_r
+    median = cv2.medianBlur(landmark, 3)
     landmark = cv2.dilate(median, landmark_kernel, iterations = 1)
 
     if debug:
@@ -97,8 +98,8 @@ def detect_grid(frame, logging, debug=False):
     histo, bin_edges  = np.histogram(cell_xx, bins=nBins, density=True)
     bin_edges = list(map(int, bin_edges))
 
-    # print(histo)
-    # print(bin_edges)
+    print(histo)
+    print(bin_edges)
 
     ncols = 0
     epsilon = 0.00001
@@ -152,13 +153,13 @@ def detect_grid(frame, logging, debug=False):
 
 
 
-    # for ll in col_edges:
-    #     bx1 = ll[0]
-    #     bx2 = ll[1]
-    #     bc = ll[2]
-    #     cv2.line(small, (bx1, 0), (bx1, small.shape[0]), (0, 0, 255), 2)
-    #     cv2.line(small, (bx2, 0), (bx2, small.shape[0]), (0, 0, 255), 2)
-    #     cv2.line(small, (bc, 0), (bc, small.shape[0]), (0, 255, 255), 2)
+    for ll in col_edges:
+        bx1 = ll[0]
+        bx2 = ll[1]
+        bc = ll[2]
+        cv2.line(small, (bx1, 0), (bx1, small.shape[0]), (0, 0, 255), 2)
+        cv2.line(small, (bx2, 0), (bx2, small.shape[0]), (0, 0, 255), 2)
+        cv2.line(small, (bc, 0), (bc, small.shape[0]), (0, 255, 255), 2)
 
 
     # print('find {} cells'.format(len(cell_list)))
@@ -222,7 +223,10 @@ if __name__ == "__main__":
             bVideoRead, frame = cap.read()  
         cap.release()
 
-        cv2.imwrite('grid_sample.jpg', frame)
+        fnlst = args.video_name.rsplit('.',1) 
+        fname = fnlst[0] + '_sample.jpg'
+
+        cv2.imwrite(fname, frame)
 
         # frame = cv2.imread('grid_img.png')
         detect_landmark(frame, logging, args.show_debugmsg)
