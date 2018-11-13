@@ -22,6 +22,9 @@ nBins = 12
 
 # 底下是 detect_landmark 參數
 th_mark = 240
+mark_area_min = 40
+mark_area_max = 150
+mark_ratio_min = 0.75
 
 
 def detect_landmark(frame, logging, debug=False):
@@ -34,11 +37,52 @@ def detect_landmark(frame, logging, debug=False):
     median = cv2.medianBlur(landmark, 3)
     landmark = cv2.dilate(median, landmark_kernel, iterations = 1)
 
+
     if debug:
         cv2.imshow('landmark',landmark)
         # cv2.imshow('bin_color',bin_color)
         key = cv2.waitKey(0)    
 
+    _, contours, hierarchy = cv2.findContours(landmark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        
+    landmark_list = []
+    landmark_center_lst = []    
+    for con in contours:
+        area = cv2.contourArea(con)
+        if area < mark_area_min or area > mark_area_max:
+            continue
+
+        # clen = len(con)
+        # compact = (clen * clen) / area;
+        # # print('clen:', clen, compact)
+        # if compact > cell_compact_th:
+        #     continue
+
+        rect = cv2.minAreaRect(con)
+        width, height = rect[1]
+        angle = rect[2]
+        if width > height:
+            ratio = height/width
+        else:
+            ratio = width/height
+        # print('ratio ', ratio)
+        if ratio < mark_ratio_min:
+            continue
+
+        M = cv2.moments(con)
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+        # print(cx, cy)
+        landmark_center_lst.append([cx,cy])
+
+        approx = cv2.approxPolyDP(con, 3,True)
+        landmark_list.append(approx)
+
+    cv2.drawContours(small, landmark_list, -1, (0,255,0), 1)
+    if debug:
+        cv2.imshow('landmark_list',small)
+        # cv2.imshow('bin_color',bin_color)
+        key = cv2.waitKey(0)        
 
 def detect_grid(frame, logging, debug=False):
     small = cv2.pyrDown(frame)
@@ -98,8 +142,8 @@ def detect_grid(frame, logging, debug=False):
     histo, bin_edges  = np.histogram(cell_xx, bins=nBins, density=True)
     bin_edges = list(map(int, bin_edges))
 
-    print(histo)
-    print(bin_edges)
+    # print(histo)
+    # print(bin_edges)
 
     ncols = 0
     epsilon = 0.00001
@@ -153,13 +197,13 @@ def detect_grid(frame, logging, debug=False):
 
 
 
-    for ll in col_edges:
-        bx1 = ll[0]
-        bx2 = ll[1]
-        bc = ll[2]
-        cv2.line(small, (bx1, 0), (bx1, small.shape[0]), (0, 0, 255), 2)
-        cv2.line(small, (bx2, 0), (bx2, small.shape[0]), (0, 0, 255), 2)
-        cv2.line(small, (bc, 0), (bc, small.shape[0]), (0, 255, 255), 2)
+    # for ll in col_edges:
+    #     bx1 = ll[0]
+    #     bx2 = ll[1]
+    #     bc = ll[2]
+    #     cv2.line(small, (bx1, 0), (bx1, small.shape[0]), (0, 0, 255), 2)
+    #     cv2.line(small, (bx2, 0), (bx2, small.shape[0]), (0, 0, 255), 2)
+    #     cv2.line(small, (bc, 0), (bc, small.shape[0]), (0, 255, 255), 2)
 
 
     # print('find {} cells'.format(len(cell_list)))
