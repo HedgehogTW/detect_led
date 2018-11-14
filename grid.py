@@ -30,29 +30,63 @@ mark_ratio_min = 0.75
 top_left_mark = None
 bottom_left_mark = None
 
+# 底下是 find_layout 參數
+extend_dist = 30
+
 img_w = None
 img_h = None
+
 layout = np.full((30,30), -1)
+grid_idx_map = None
+
 
 class Cell:
+    ''' x1    x4
+        x2    x3'''
     def __init__(self, cen, con):
         self.center = cen # [x, y]
-        self.contour = con
+        self.polygon = con # np.array [x, y]
         self.col = -1
         self.row = -1
-        self.top_left = self.find_top_left()
+        self.find_corners()
 
-    def find_top_left(self):
+    def find_corners(self):
         min_dist = 999999
-        for i, cc in enumerate(self.contour):
+        for i, cc in enumerate(self.polygon):
             cx = cc[0]
             cy = cc[1]
             dist = cx**2 + cy **2
             if dist < min_dist:
-                top_left = (cx, cy)
+                self.x1 = cc # top_left
                 min_dist = dist        
 
-        return top_left
+        min_dist = 999999
+        for i, cc in enumerate(self.polygon):
+            cx = cc[0]
+            cy = img_h - cc[1]
+            dist = cx**2 + cy **2
+            if dist < min_dist:
+                self.x2 = cc # bottom_left
+                min_dist = dist    
+
+        min_dist = 999999
+        for i, cc in enumerate(self.polygon):
+            cx = img_w - cc[0]
+            cy = img_h - cc[1]
+            dist = cx**2 + cy **2
+            if dist < min_dist:
+                self.x3 = cc # bottom_right
+                min_dist = dist   
+
+        min_dist = 999999
+        for i, cc in enumerate(self.polygon):
+            cx = img_w - cc[0]
+            cy = cc[1]
+            dist = cx**2 + cy **2
+            if dist < min_dist:
+                self.x4 = cc # top_right
+                min_dist = dist   
+
 
     def assign_col(self, col):
         self.col = col
@@ -87,14 +121,14 @@ def find_top_left_mark(landmark_center_lst):
         bottom_left))
 
 
-def arrange_grid(landmark_center_lst, cell_list):
+def find_layout(landmark_center_lst, cell_list):
     global layout
 
     min_dist = 999999    
     for i, cell in enumerate(cell_list):
         # print(i, cell.top_left)
-        dx = cell.top_left[0]-top_left_mark[0]
-        dy = cell.top_left[1]-top_left_mark[1] 
+        dx = cell.x1[0]-top_left_mark[0]
+        dy = cell.x1[1]-top_left_mark[1] 
 
         dist = dx**2 + dy **2
         if dist < min_dist:
@@ -102,6 +136,33 @@ def arrange_grid(landmark_center_lst, cell_list):
             first_cell = i
 
     print('first cell ', first_cell)
+
+
+    i = first_cell
+    while True:
+        cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+        # print(cell_list[i].polygon)
+
+        cell_ext = np.vstack([cell_list[i].x1, cell_list[i].x2, cell_list[i].x3, cell_list[i].x4])
+        cell_ext[1][1] += extend_dist
+        cell_ext[2][1] += extend_dist
+        # print(cell_ext)
+
+        cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
+        next_mask = cell_mask & grid_idx_map 
+        next_mask = next_mask[next_mask!=i+1]
+        next_mask = next_mask[next_mask!=0]
+        # cv2.imwrite('next_mask.png', next_mask)
+        if np.count_nonzero(next_mask) < 20:
+            print('count_nonzero <20, break')
+            break
+        next_idx = int(np.median(next_mask))-1
+        
+        i = next_idx
+        if cell_list[i].x1[1] +5 > bottom_left_mark[1]:
+            break
+
+        print(next_idx)
 
 
 
@@ -117,10 +178,10 @@ def detect_landmark(small, logging, debug=False):
     median = cv2.medianBlur(landmark, 3)
     landmark = cv2.dilate(median, landmark_kernel, iterations = 1)
 
-    if debug:
-        cv2.imshow('landmark',landmark)
-        # cv2.imshow('bin_color',bin_color)
-        key = cv2.waitKey(0)    
+    # if debug:
+    #     cv2.imshow('landmark',landmark)
+    #     # cv2.imshow('bin_color',bin_color)
+    #     key = cv2.waitKey(0)    
 
     _, contours, hierarchy = cv2.findContours(landmark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         
@@ -163,30 +224,20 @@ def detect_landmark(small, logging, debug=False):
 
 
 
-def detect_grid(frame, logging, debug=False):
-    global img_w
-    global img_h
-
-    small = cv2.pyrDown(frame)
-    img_w = small.shape[1]
-    img_h = small.shape[0]
-    print('small image size (w, h): ', img_w, img_h)
-    landmark_center_lst = detect_landmark(small, logging, debug)
-    find_top_left_mark(landmark_center_lst)
+def detect_grid(small, cell_list, logging, debug=False):
+    global grid_idx_map
 
     gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
     bin_img = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,th_block_size,th_c)
     bin_img = cv2.dilate(bin_img, grid_kernel, iterations = 1)
     bin_img = 255 - bin_img
 
-
     _, contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    if debug:
-        bin_color = cv2.cvtColor(bin_img,cv2.COLOR_GRAY2BGR)
-        cv2.drawContours(bin_color, contours, -1, (0,255,0), 1)
-
-    cell_list = []
+    # if debug:
+    #     bin_color = cv2.cvtColor(bin_img,cv2.COLOR_GRAY2BGR)
+    #     cv2.drawContours(bin_color, contours, -1, (0,255,0), 1)
+    
     center_lst = []    
     for con in contours:
         area = cv2.contourArea(con)
@@ -212,16 +263,25 @@ def detect_grid(frame, logging, debug=False):
         # print(cx, cy)
         # center_lst.append([cx,cy])
         approx = cv2.approxPolyDP(con, polygon_dist,True)
-        # print('approx ',approx)
+        # print('approx nodes:', len(approx))
+        if len(approx) != 4:
+            print('X approx nodes:', len(approx))
+            continue
+
         approx_arr = np.array(approx).reshape(-1, 2)
 
         # print('approx_arr ',approx_arr)
         cell = Cell([cx,cy], approx_arr)
         cell_list.append(cell)
         
+    grid_idx_map = np.full(bin_img.shape, 0)
+    for i, cc in enumerate(cell_list):
+        cv2.drawContours(grid_idx_map, [cc.polygon], -1, (i+1,i+1,i+1), -1)
+    cv2.imwrite('grid_idx_map.png', grid_idx_map)
+
 
     # print(center_lst)
-    arrange_grid(landmark_center_lst, cell_list)
+
 
     ### vvv histogram to separate columns, failed
     # cell_center_arr = np.array(center_lst)
@@ -298,8 +358,28 @@ def detect_grid(frame, logging, debug=False):
     # print('find {} cells'.format(len(cell_list)))
     # mark_center_arr = np.array(landmark_center_lst)
 
+
+    # return coord_dict, cell_list
+
+def identify_grid(frame, logging, debug=False):
+    global img_w
+    global img_h
+
+    cell_list = []
+
+    small = cv2.pyrDown(frame)
+    img_w = small.shape[1]
+    img_h = small.shape[0]
+    print('small image size (w, h): ', img_w, img_h)
+
+    detect_grid(small, cell_list, logging, debug)
+
+    landmark_center_lst = detect_landmark(small, logging, debug)
+    find_top_left_mark(landmark_center_lst)  
+    find_layout(landmark_center_lst, cell_list)
+
     for i, cc in enumerate(cell_list):
-        cv2.drawContours(small, [cc.contour], -1, (0,255,0), 1)
+        cv2.drawContours(small, [cc.polygon], -1, (0,255,0), 1)
         strText = '{}'.format(i)
         cv2.putText(small, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
         cv2.circle(small,(cc.center[0], cc.center[1]),2,(0,0,255),3)
@@ -318,10 +398,7 @@ def detect_grid(frame, logging, debug=False):
     cv2.imwrite('grid_detection.png', small)
 
 
-    return coord_dict, cell_list
 
- def identify_grid():
-     
 
 if __name__ == "__main__":
     ini_show_debugmsg = True
@@ -378,4 +455,4 @@ if __name__ == "__main__":
         # frame = cv2.imread('grid_img.png')
         
 
-        detect_grid(frame, logging, args.show_debugmsg)
+        identify_grid(frame, logging, args.show_debugmsg)
