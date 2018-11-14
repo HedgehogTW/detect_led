@@ -32,11 +32,11 @@ bottom_left_mark = None
 
 # 底下是 find_layout 參數
 extend_dist = 30
-
+th_overlap = 100
 img_w = None
 img_h = None
 
-layout = np.full((30,30), -1)
+layout_map = np.full((15,6), -1)
 grid_idx_map = None
 
 
@@ -48,6 +48,7 @@ class Cell:
         self.polygon = con # np.array [x, y]
         self.col = -1
         self.row = -1
+        self.coord = None
         self.find_corners()
 
     def find_corners(self):
@@ -88,8 +89,8 @@ class Cell:
                 min_dist = dist   
 
 
-    def assign_col(self, col):
-        self.col = col
+    def set_coord(self, coord):
+        self.coord = coord
 
 
 def find_top_left_mark(landmark_center_lst):
@@ -120,9 +121,57 @@ def find_top_left_mark(landmark_center_lst):
         top_left_mark[1],
         bottom_left))
 
+def move_down(curr_idx, cell_list):
+    cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+    # print(cell_list[i].polygon)
+
+    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
+                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
+    cell_ext[1][1] += extend_dist
+    cell_ext[2][1] += extend_dist
+    # print(cell_ext)
+
+    cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
+    next_mask = cell_mask & grid_idx_map 
+    next_mask = next_mask[next_mask!=curr_idx+1]
+    next_mask = next_mask[next_mask!=0]
+    # cv2.imwrite('next_mask.png', next_mask)
+    nonzero = np.count_nonzero(next_mask)
+    if  nonzero < th_overlap:
+        next_idx = -1
+    else:
+        next_idx = int(np.median(next_mask))-1
+
+    print(next_idx, nonzero)
+    return next_idx
+
+def move_right(curr_idx, cell_list):
+    cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+    # print(cell_list[i].polygon)
+
+    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
+                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
+    cell_ext[2][0] += extend_dist
+    cell_ext[3][0] += extend_dist
+    # print(cell_ext)
+
+    cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
+    next_mask = cell_mask & grid_idx_map 
+    next_mask = next_mask[next_mask!=curr_idx+1]
+    next_mask = next_mask[next_mask!=0]
+    # cv2.imwrite('next_mask.png', next_mask)
+    nonzero = np.count_nonzero(next_mask) 
+    if nonzero < th_overlap:
+        
+        next_idx = -1
+    else:
+        next_idx = int(np.median(next_mask))-1
+
+    print(next_idx, nonzero)
+    return next_idx
 
 def find_layout(landmark_center_lst, cell_list):
-    global layout
+    global layout_map
 
     min_dist = 999999    
     for i, cell in enumerate(cell_list):
@@ -137,36 +186,46 @@ def find_layout(landmark_center_lst, cell_list):
 
     print('first cell ', first_cell)
 
-
-    i = first_cell
+    # cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+    layout_map[0, 0] = first_cell
+    col = 0
+    num_rows = -1
     while True:
-        cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
-        # print(cell_list[i].polygon)
+        i = first_cell
+        row = 0
+        while True:
+            next_idx = move_down(i, cell_list)
+            if next_idx < 0:
+                print('break, move_down count_nonzero <', th_overlap)
+                break
 
-        cell_ext = np.vstack([cell_list[i].x1, cell_list[i].x2, cell_list[i].x3, cell_list[i].x4])
-        cell_ext[1][1] += extend_dist
-        cell_ext[2][1] += extend_dist
-        # print(cell_ext)
+            if num_rows ==-1 :
+                if cell_list[next_idx].x1[1] +5 > bottom_left_mark[1]:
+                    break
+            elif row+1 >  num_rows:
+                break 
 
-        cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
-        next_mask = cell_mask & grid_idx_map 
-        next_mask = next_mask[next_mask!=i+1]
-        next_mask = next_mask[next_mask!=0]
-        # cv2.imwrite('next_mask.png', next_mask)
-        if np.count_nonzero(next_mask) < 20:
-            print('count_nonzero <20, break')
+            row += 1
+            # print(next_idx)
+            layout_map[row,col] = next_idx
+            cell_list[i].set_coord((row,col))
+            i = next_idx
+
+        if col==0:
+            num_rows = row
+
+        next_col = move_right(first_cell, cell_list)
+        if next_col < 0:
+            print('break, move_right count_nonzero <', th_overlap)
             break
-        next_idx = int(np.median(next_mask))-1
-        
-        i = next_idx
-        if cell_list[i].x1[1] +5 > bottom_left_mark[1]:
-            break
 
-        print(next_idx)
+        col += 1
+        first_cell = next_col
+        layout_map[0,col] = next_col
+        cell_list[next_col].set_coord((0,col))
 
 
-
-
+    print(layout_map)
 
 def detect_landmark(small, logging, debug=False):
     # small = cv2.pyrDown(frame)
@@ -280,86 +339,7 @@ def detect_grid(small, cell_list, logging, debug=False):
     cv2.imwrite('grid_idx_map.png', grid_idx_map)
 
 
-    # print(center_lst)
-
-
-    ### vvv histogram to separate columns, failed
-    # cell_center_arr = np.array(center_lst)
-    # cell_xx = cell_center_arr[:,0]
-    # # print(cell_arr, cell_arr.shape)
-    # histo, bin_edges  = np.histogram(cell_xx, bins=nBins, density=True)
-    # bin_edges = list(map(int, bin_edges))
-
-    # # print(histo)
-    # # print(bin_edges)
-
-    # ncols = 0
-    # epsilon = 0.00001
-    # high_level = False
-    # col_edges = []
-    # for i in range(nBins):
-    #     if histo[i] > epsilon:
-    #         if not high_level:
-    #             high_level = True
-    #             ncols += 1
-    #             start = bin_edges[i]
-    #     else:
-    #         if high_level:
-    #             end = bin_edges[i]
-    #             col_edges.append((start, end, (start+end)//2))              
-    #         high_level = False
-
-    # if high_level:
-    #     end = bin_edges[nBins]
-    #     col_edges.append((start, end, (start+end)//2))         
-
-
-    # # print('ncols:', ncols)
-    # # print(col_edges)
-
-    # cell_col_idx = []
-    # for x in cell_xx:
-    #     dmin = 99999
-    #     for idx, cc in enumerate(col_edges):
-    #         dx = abs(x - cc[2])
-    #         if dx < dmin:
-    #             dmin = dx
-    #             cidx = idx
-    #     cell_col_idx.append(cidx)
-
-    # col_cell_center_lst = []
-    # coord_dict = {}
-    # for i in range(ncols):
-    #     col_cell_center = [ (tuple(cc), k) for k, cc in enumerate(cell_center_arr) if cell_col_idx[k]==i]
-    #     col_cell_center.sort(key=lambda x: x[0][1])
-    #     col_cell_center_lst.append(col_cell_center)
-
-
-    #     for row, cc in enumerate(col_cell_center):
-    #         coord_dict[cc[1]] = (row, i)
-    #         strText = '[{},{}]'.format(row, i)
-    #         cv2.putText(small, strText, cc[0], cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 255, 0))
-
-    # print(coord_dict)
-    ### ^^^ histogram to separate columns, failed
-
-
-
-
-    # for ll in col_edges:
-    #     bx1 = ll[0]
-    #     bx2 = ll[1]
-    #     bc = ll[2]
-    #     cv2.line(small, (bx1, 0), (bx1, small.shape[0]), (0, 0, 255), 2)
-    #     cv2.line(small, (bx2, 0), (bx2, small.shape[0]), (0, 0, 255), 2)
-    #     cv2.line(small, (bc, 0), (bc, small.shape[0]), (0, 255, 255), 2)
-
-
-    # print('find {} cells'.format(len(cell_list)))
-    # mark_center_arr = np.array(landmark_center_lst)
-
-
-    # return coord_dict, cell_list
+ 
 
 def identify_grid(frame, logging, debug=False):
     global img_w
