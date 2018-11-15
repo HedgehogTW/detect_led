@@ -64,10 +64,10 @@ kernel3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 led_on = False
 blob_lst = []
 
+grid_idx_map = None
+layout_map = None
 posimg = None
 posimg1 = None
-coord_dict = None
-cell_list = None
 center_lst = None
 
 # The callback for when the client receives a CONNACK response from the server.
@@ -254,29 +254,25 @@ def locate_position():
             posimg1 = posimg.copy()
             cv2.circle(posimg1,(c,r),5,(0, 0, 255), -1)
 
-        bFindCell = False
-        for i, poly in enumerate(cell_list):
-            inCell = cv2.pointPolygonTest(poly,(c,r),False)
-            if inCell >=1:
-                bFindCell = True
-                coord = coord_dict[i]
-                str_position = '[{}]'.format(coord)
-                blob['grid'] = str_position
-                logging.info('incell:{}'.format(i))
-                if args.show_debugmsg:
-                    print('incell:', i)
-                break
-
-        if bFindCell==False:
+        idx = grid_idx_map[r, c, 0] -1
+        logging.info('locate_position: find idx {}'.format(idx))
+        print('locate_position: find idx ', idx)
+        if idx < 0:           
             others = np.array(center_lst)
             pt = np.array([[c, r]])
             distances = cdist(pt, others)
-            i = distances.argmin()
-            coord = coord_dict[i]
-            str_position = '[{}]'.format(coord)
-            blob['grid'] = str_position
-            logging.info('incell:{}'.format(i))            
-            print('incell:', i)
+            idx = distances.argmin()
+            logging.info('locate_position: find nearest idx {}'.format(idx))
+            print('locate_position: find nearest idx ', idx)
+
+          
+        coord = np.argwhere(layout_map ==idx)
+        coord = np.squeeze(coord)
+
+        str_position = '{}'.format(coord)
+        blob['grid'] = str_position
+        logging.info('locate_position: idx {}, {}'.format(idx, coord))            
+        print('locate_position:idx {}, {}'.format(idx, coord))
 
 
 def process_frame(frame):
@@ -317,7 +313,7 @@ def process_frame(frame):
         height = int(frame.shape[0] * 0.5)
         dim = (width, height) 
         resized = cv2.resize(frame, dim) 
-        cv2.drawContours(resized, cell_list, -1, (0,255,0), 1)
+        # cv2.drawContours(resized, cell_list, -1, (0,255,0), 1)
 
         for i, bbdict in enumerate(blob_lst):
             box = bbdict['box'] 
@@ -330,7 +326,7 @@ def process_frame(frame):
         # cv2.imwrite('many_result.jpg',frame)
 
 
-            cv2.putText(resized, bbdict['grid'], (x+10,y+10), cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 255, 0))
+            cv2.putText(resized, bbdict['grid'], (x+10,y+10), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 255, 0))
 
         cv2.imshow("resized frame", resized)
 
@@ -496,10 +492,10 @@ def main():
     global ini_show_image
     global ini_show_debugmsg
     global args    
-    global coord_dict
-    global cell_list
-    global center_lst
     global posimg
+    global layout_map
+    global grid_idx_map
+    global center_lst
 
     parser = argparse.ArgumentParser(description='detect led')   
     parser.add_argument('--disable_mqtt', action="store_true", dest='disable_mqtt', default=ini_disable_mqtt, help='disable mqtt')
@@ -562,13 +558,20 @@ def main():
         logging.debug('imread grid_img.png failed')
         return
 
-    coord_dict, cell_list, center_lst = grid.detect_grid(grid_img, logging, args.show_debugmsg)
-    logging.info("coord_dict: {}".format(coord_dict))
-    ss = '# of coord_dict:{}, # of cells:{}'.format(len(coord_dict), len(cell_list))
-    logging.info(ss)
-    if args.show_debugmsg:
-        print(coord_dict)
-    print(ss)
+    layout_map, center_lst = grid.identify_grid(grid_img, logging, args.show_debugmsg)
+    if layout_map is None:
+        print('Error in identify_grid')
+        logging.debug('Error in identify_grid')
+        return       
+
+    grid_idx_map = cv2.imread('grid_idx_map.png')
+    if grid_idx_map is None:
+        print('imread grid_idx_map.png failed')
+        logging.debug('imread grid_idx_map.png failed')
+        return
+
+
+    # print('layout_map', layout_map)
 
     if args.show_posimg:
         posimg = cv2.imread('grid_detection.png')

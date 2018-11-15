@@ -13,7 +13,7 @@ grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
 th_block_size = 33
 th_c = -20
-cell_area_min = 1200
+cell_area_min = 1500
 cell_area_max = 10000
 cell_ratio_min = 0.15
 cell_ratio_max = 0.55
@@ -29,6 +29,8 @@ mark_ratio_min = 0.75
 
 top_left_mark = None
 bottom_left_mark = None
+bottom_right_mark = None
+top_right_mark = None
 
 # 底下是 find_layout 參數
 extend_dist = 30
@@ -93,9 +95,11 @@ class Cell:
         self.coord = coord
 
 
-def find_top_left_mark(landmark_center_lst):
+def find_top_left_mark(landmark_center_lst, logging):
     global top_left_mark
     global bottom_left_mark
+    global bottom_right_mark
+    global top_right_mark
 
     min_dist = 999999
     for i, cc in enumerate(landmark_center_lst):
@@ -113,15 +117,43 @@ def find_top_left_mark(landmark_center_lst):
             bottom_left = i
             min_dist = cx**2 + cy **2
 
+    min_dist = 999999
+    for i, cc in enumerate(landmark_center_lst):
+        cx = img_w - cc[0]
+        cy = img_h - cc[1]
+        dist = cx**2 + cy **2
+        if dist < min_dist:
+            bottom_right = i # bottom_right
+            min_dist = dist   
+
+
+    min_dist = 999999
+    for i, cc in enumerate(landmark_center_lst):
+        cx = img_w - cc[0]
+        cy = cc[1]
+        dist = cx**2 + cy **2
+        if dist < min_dist:
+            top_right = i # top_right
+            min_dist = dist  
+
+    top_right_mark = landmark_center_lst[top_right]
+    bottom_right_mark = landmark_center_lst[bottom_right]
     top_left_mark = landmark_center_lst[top_left]
     bottom_left_mark = landmark_center_lst[bottom_left]
 
-    print('top_left {}({},{}), bottom_left {}'.format(top_left, 
-        top_left_mark[0],
-        top_left_mark[1],
-        bottom_left))
+    msg = 'top_left {}({},{}), bottom_left {}({},{})'.format(
+        top_left, top_left_mark[0], top_left_mark[1],
+        bottom_left, bottom_left_mark[0], bottom_left_mark[1])
+    logging.info(msg)
+    print(msg)
 
-def move_down(curr_idx, cell_list):
+    msg = 'top_right {}({},{}), bottom_right {}({},{})'.format(
+        top_right, top_right_mark[0], top_right_mark[1],
+        bottom_right, bottom_right_mark[0], bottom_right_mark[1])
+    logging.info(msg)
+    print(msg)
+
+def move_down(curr_idx, cell_list, logging, debug=False):
     cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
     # print(cell_list[i].polygon)
 
@@ -142,10 +174,12 @@ def move_down(curr_idx, cell_list):
     else:
         next_idx = int(np.median(next_mask))-1
 
-    print(next_idx, nonzero)
+    if debug:
+        print(next_idx, nonzero)
+    logging.info('move_down: idx {}, nonzero {}'.format(next_idx, nonzero))
     return next_idx
 
-def move_right(curr_idx, cell_list):
+def move_right(curr_idx, cell_list, logging, debug=False):
     cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
     # print(cell_list[i].polygon)
 
@@ -167,10 +201,12 @@ def move_right(curr_idx, cell_list):
     else:
         next_idx = int(np.median(next_mask))-1
 
-    print(next_idx, nonzero)
+    if debug:
+        print(next_idx, nonzero)
+    logging.info('move_right: idx {}, nonzero {}'.format(next_idx, nonzero))
     return next_idx
 
-def find_layout(landmark_center_lst, cell_list):
+def find_layout(landmark_center_lst, cell_list, logging, debug=False):
     global layout_map
 
     min_dist = 999999    
@@ -184,19 +220,25 @@ def find_layout(landmark_center_lst, cell_list):
             min_dist = dist
             first_cell = i
 
-    print('first cell ', first_cell)
+    if debug:
+        print('first cell ', first_cell)
+    logging.info('first cell {}'.format(first_cell))
 
     # cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
     layout_map[0, 0] = first_cell
     col = 0
+    row = 0
     num_rows = -1
+    all_Done = False
     while True:
         i = first_cell
-        row = 0
-        while True:
-            next_idx = move_down(i, cell_list)
+
+        while True: # find next row
+            next_idx = move_down(i, cell_list, logging, debug)
             if next_idx < 0:
-                print('break, move_down count_nonzero <', th_overlap)
+                if debug:
+                    print('break, move_down count_nonzero <', th_overlap)
+                logging.info('break, move_down count_nonzero <{}'.format(th_overlap))
                 break
 
             if num_rows ==-1 :
@@ -214,17 +256,42 @@ def find_layout(landmark_center_lst, cell_list):
         if col==0:
             num_rows = row
 
-        next_col = move_right(first_cell, cell_list)
-        if next_col < 0:
-            print('break, move_right count_nonzero <', th_overlap)
+        row = 0
+        while True: # find next column
+            next_col = move_right(first_cell, cell_list, logging, debug)
+            if next_col < 0:
+                msg = 'continue, {} move_right {} count_nonzero < {}'.format(first_cell,next_col,th_overlap)
+                if debug:
+                    print(msg)
+                logging.info(msg)
+                row += 1
+                first_cell = layout_map[row,col] 
+                continue
+            elif cell_list[next_col].x4[0] -10 > top_right_mark[0]:
+                msg = 'continue, {} move_right {} next_col x4 x {} > top_right_mark x {}'.format(
+                    first_cell,next_col, cell_list[next_col].x4[0], top_right_mark[0])
+                if debug:
+                    print(msg)
+                logging.info(msg)
+
+                row += 1
+                first_cell = layout_map[row,col]                
+                continue
+            elif row+1 >  num_rows:
+                all_Done = True
+                break 
+            
+            break
+
+        if all_Done:
             break
 
         col += 1
         first_cell = next_col
-        layout_map[0,col] = next_col
-        cell_list[next_col].set_coord((0,col))
+        layout_map[row,col] = next_col
+        cell_list[next_col].set_coord((row,col))
 
-
+    logging.info(layout_map)
     print(layout_map)
 
 def detect_landmark(small, logging, debug=False):
@@ -346,42 +413,47 @@ def identify_grid(frame, logging, debug=False):
     global img_h
 
     cell_list = []
+    center_lst = []
 
     small = cv2.pyrDown(frame)
     img_w = small.shape[1]
     img_h = small.shape[0]
-    print('small image size (w, h): ', img_w, img_h)
+    print('identify_grid: small image size (w, h): ', img_w, img_h)
 
     detect_grid(small, cell_list, logging, debug)
 
     landmark_center_lst = detect_landmark(small, logging, debug)
-    find_top_left_mark(landmark_center_lst)  
-    find_layout(landmark_center_lst, cell_list)
+    if len(landmark_center_lst) <4:
+        print('Error: landmark_center_lst < 4')
+        logging.debug('Error: landmark_center_lst < 4')
+        return None
+
+
+    find_top_left_mark(landmark_center_lst, logging)  
+    find_layout(landmark_center_lst, cell_list, logging, debug)
 
     for i, cc in enumerate(cell_list):
         cv2.drawContours(small, [cc.polygon], -1, (0,255,0), 1)
         strText = '{}'.format(i)
         cv2.putText(small, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
         cv2.circle(small,(cc.center[0], cc.center[1]),2,(0,0,255),3)
+        center_lst.append(cc.center)
     # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
 
     for i, cc in enumerate(landmark_center_lst):
         strText = '[{}]'.format(i)
         cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 255))
 
-    if debug:
-        cv2.imshow('cell_list',small)
-        # cv2.imshow('bin_color',bin_color)
-        key = cv2.waitKey(0)
-
-
     cv2.imwrite('grid_detection.png', small)
 
+    # if debug:
+    #     cv2.imshow('cell_list',small)
+    #     key = cv2.waitKey(0)
 
-
+    return layout_map, center_lst
 
 if __name__ == "__main__":
-    ini_show_debugmsg = True
+    ini_show_debugmsg = False
     ini_show_image = True
 
     parser = argparse.ArgumentParser(description='grid')   
@@ -431,7 +503,7 @@ if __name__ == "__main__":
         fname = fnlst[0] + '_sample.jpg'
 
         cv2.imwrite(fname, frame)
-
+        cv2.imwrite('grid_img.png', frame)
         # frame = cv2.imread('grid_img.png')
         
 
