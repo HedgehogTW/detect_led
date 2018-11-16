@@ -18,7 +18,7 @@ from time import localtime, strftime
 import logging
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
-import grid
+import grid_1116 as grid
 
 from sys import platform as _platform
 if _platform == "linux" or _platform == "linux2": # linux
@@ -158,27 +158,6 @@ def detect_blob_color(frame, blob_lst, mask_led):
     # remove while color blob    
     blob_lst = [bb for bb in blob_lst if bb['color'] != 'white'] 
     return blob_lst
-
-# def track_blobs(img_bin_now):
-#     overlap = True
-#     # if old_blob_frame is not None:
-#     for bbdict in blob_lst:
-#         box = bbdict['box'] 
-#         x = box[0]
-#         y = box[1]
-#         w = box[2]
-#         h = box[3]
-#         rect = img_bin_now[y:y+h, x:x+w]
-#         # cv2.rectangle(img_bin_now,(x,y),(x+w,y+h),(255,255,255),1)
-#         # cv2.imshow("old_bin_frame", img_bin_now)
-#         count = np.count_nonzero(rect)
-#         if count < cc_area_low:
-#             bbdict['on'] = False
-#             overlap = False
-#             # print(bbdict['color'] + 'off')
-
-#             # print(box, count)
-#     return overlap
 
 
 def find_blobs(frame):
