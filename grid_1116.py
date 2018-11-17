@@ -32,11 +32,6 @@ mark_area_min = 40
 mark_area_max = 150
 mark_ratio_min = 0.75
 
-top_left_mark = None
-bottom_left_mark = None
-bottom_right_mark = None
-top_right_mark = None
-
 # 底下是 find_layout 參數
 extend_dist = 30
 th_overlap = 100
@@ -45,17 +40,20 @@ img_h = None
 
 # rect_combination
 polygon_box_dist = 20
+map_size = 15
 
-layout_map = np.full((15,6), -1)
 grid_idx_map = None
 
 def find_x1x2x3x4(points_lst):
     ''' x1    x4
         x2    x3'''    
+
+    x, y, w, h = cv2.boundingRect(points_lst)
+    # print(x, y, w, h)
     min_dist = 999999
     for i, cc in enumerate(points_lst):
-        cx = cc[0]
-        cy = cc[1]
+        cx = cc[0]-x
+        cy = cc[1]-y
         dist = cx**2 + cy **2
         if dist < min_dist:
             x1_idx = i # top_left
@@ -63,8 +61,8 @@ def find_x1x2x3x4(points_lst):
 
     min_dist = 999999
     for i, cc in enumerate(points_lst):
-        cx = cc[0]
-        cy = img_h - cc[1]
+        cx = cc[0] -x
+        cy = (y+h) - cc[1]
         dist = cx**2 + cy **2
         if dist < min_dist:
             x2_idx = i # bottom_left
@@ -72,8 +70,8 @@ def find_x1x2x3x4(points_lst):
 
     min_dist = 999999
     for i, cc in enumerate(points_lst):
-        cx = img_w - cc[0]
-        cy = img_h - cc[1]
+        cx = (x+w) - cc[0]
+        cy = (y+h) - cc[1]
         dist = cx**2 + cy **2
         if dist < min_dist:
             x3_idx = i # bottom_right
@@ -81,8 +79,8 @@ def find_x1x2x3x4(points_lst):
 
     min_dist = 999999
     for i, cc in enumerate(points_lst):
-        cx = img_w - cc[0]
-        cy = cc[1]
+        cx = (x+w) - cc[0]
+        cy = cc[1] -y
         dist = cx**2 + cy **2
         if dist < min_dist:
             x4_idx = i # top_right
@@ -108,109 +106,39 @@ class Cell:
         self.x3 = self.polygon[x3_idx]
         self.x4 = self.polygon[x4_idx]
 
-        # min_dist = 999999
-        # for i, cc in enumerate(self.polygon):
-        #     cx = cc[0]
-        #     cy = cc[1]
-        #     dist = cx**2 + cy **2
-        #     if dist < min_dist:
-        #         self.x1 = cc # top_left
-        #         min_dist = dist        
-
-        # min_dist = 999999
-        # for i, cc in enumerate(self.polygon):
-        #     cx = cc[0]
-        #     cy = img_h - cc[1]
-        #     dist = cx**2 + cy **2
-        #     if dist < min_dist:
-        #         self.x2 = cc # bottom_left
-        #         min_dist = dist    
-
-        # min_dist = 999999
-        # for i, cc in enumerate(self.polygon):
-        #     cx = img_w - cc[0]
-        #     cy = img_h - cc[1]
-        #     dist = cx**2 + cy **2
-        #     if dist < min_dist:
-        #         self.x3 = cc # bottom_right
-        #         min_dist = dist   
-
-        # min_dist = 999999
-        # for i, cc in enumerate(self.polygon):
-        #     cx = img_w - cc[0]
-        #     cy = cc[1]
-        #     dist = cx**2 + cy **2
-        #     if dist < min_dist:
-        #         self.x4 = cc # top_right
-        #         min_dist = dist   
-
-
     def set_coord(self, coord):
         self.coord = coord
 
 
 def find_top_left_mark(landmark_center_lst, logging):
-    global top_left_mark
-    global bottom_left_mark
-    global bottom_right_mark
-    global top_right_mark
+    # global top_left_mark
+    # global bottom_left_mark
+    # global bottom_right_mark
+    # global top_right_mark
 
     top_left, bottom_left, bottom_right, top_right = find_x1x2x3x4(landmark_center_lst)
-
-    # min_dist = 999999
-    # for i, cc in enumerate(landmark_center_lst):
-    #     cx = cc[0]
-    #     cy = cc[1]
-    #     if cx**2 + cy **2 < min_dist:
-    #         top_left = i
-    #         min_dist = cx**2 + cy **2
-
-    # min_dist = 999999
-    # for i, cc in enumerate(landmark_center_lst):
-    #     cx = cc[0]
-    #     cy = img_h - cc[1]
-    #     if cx**2 + cy **2 < min_dist:
-    #         bottom_left = i
-    #         min_dist = cx**2 + cy **2
-
-    # min_dist = 999999
-    # for i, cc in enumerate(landmark_center_lst):
-    #     cx = img_w - cc[0]
-    #     cy = img_h - cc[1]
-    #     dist = cx**2 + cy **2
-    #     if dist < min_dist:
-    #         bottom_right = i # bottom_right
-    #         min_dist = dist   
-
-
-    # min_dist = 999999
-    # for i, cc in enumerate(landmark_center_lst):
-    #     cx = img_w - cc[0]
-    #     cy = cc[1]
-    #     dist = cx**2 + cy **2
-    #     if dist < min_dist:
-    #         top_right = i # top_right
-    #         min_dist = dist  
 
     top_right_mark = landmark_center_lst[top_right]
     bottom_right_mark = landmark_center_lst[bottom_right]
     top_left_mark = landmark_center_lst[top_left]
     bottom_left_mark = landmark_center_lst[bottom_left]
 
-    msg = 'top_left {}({},{}), bottom_left {}({},{})'.format(
+    msg = 'top_left {}({},{}), top_right {}({},{})'.format(
         top_left, top_left_mark[0], top_left_mark[1],
-        bottom_left, bottom_left_mark[0], bottom_left_mark[1])
+        top_right, top_right_mark[0], top_right_mark[1])
     logging.info(msg)
     print(msg)
 
-    msg = 'top_right {}({},{}), bottom_right {}({},{})'.format(
-        top_right, top_right_mark[0], top_right_mark[1],
+    msg = 'bottom_left {}({},{}), bottom_right {}({},{})'.format(
+        bottom_left, bottom_left_mark[0], bottom_left_mark[1],
         bottom_right, bottom_right_mark[0], bottom_right_mark[1])
     logging.info(msg)
     print(msg)
 
+    return top_left_mark, bottom_left_mark, bottom_right_mark, top_right_mark
+
 def move_down(curr_idx, cell_list, logging, debug=False):
-    cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+    cell_mask = np.zeros(grid_idx_map.shape, dtype=np.uint8)
     # print(cell_list[i].polygon)
 
     cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
@@ -230,13 +158,14 @@ def move_down(curr_idx, cell_list, logging, debug=False):
     else:
         next_idx = int(np.median(next_mask))-1
 
+    msg = 'move_down: idx {}, nonzero {}'.format(next_idx, nonzero)
     # if debug:
-    #     print(next_idx, nonzero)
-    logging.info('move_down: idx {}, nonzero {}'.format(next_idx, nonzero))
+    #     print(msg)
+    logging.info(msg)
     return next_idx
 
 def move_right(curr_idx, cell_list, logging, debug=False):
-    cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
+    cell_mask = np.zeros(grid_idx_map.shape, dtype=np.uint8)
     # print(cell_list[i].polygon)
 
     cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
@@ -257,13 +186,19 @@ def move_right(curr_idx, cell_list, logging, debug=False):
     else:
         next_idx = int(np.median(next_mask))-1
 
+    msg = 'move_right: idx {}, nonzero {}'.format(next_idx, nonzero)
     # if debug:
-    #     print(next_idx, nonzero)
-    logging.info('move_right: idx {}, nonzero {}'.format(next_idx, nonzero))
+    #     print(msg)
+    logging.info(msg)
     return next_idx
 
-def find_layout(landmark_center_lst, cell_list, logging, debug=False):
-    global layout_map
+def layout_cells(landmark_coord, cell_list, logging, debug=False):
+    # global layout_map
+    layout_map = np.full((map_size,map_size), -1, dtype = np.int8)
+
+    top_left_mark = landmark_coord[0]
+    bottom_left_mark = landmark_coord[1]
+    top_right_mark = landmark_coord[3]
 
     min_dist = 999999    
     for i, cell in enumerate(cell_list):
@@ -283,7 +218,7 @@ def find_layout(landmark_center_lst, cell_list, logging, debug=False):
     # cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
     layout_map[0, 0] = first_cell
     col = 0
-    row = 0
+    row = 1
     num_rows = -1
     all_Done = False
     while True:
@@ -292,25 +227,36 @@ def find_layout(landmark_center_lst, cell_list, logging, debug=False):
         while True: # find next row
             next_idx = move_down(i, cell_list, logging, debug)
             if next_idx < 0:
-                if debug:
-                    print('break, move_down count_nonzero <', th_overlap)
-                logging.info('break, move_down count_nonzero <{}'.format(th_overlap))
+                # if debug:
+                #     print('break, find_layout move_down count_nonzero <', th_overlap)
+
+                logging.info('break, find_layout move_down count_nonzero <{}'.format(th_overlap))
                 break
 
             if num_rows ==-1 :
                 if cell_list[next_idx].x1[1] +5 > bottom_left_mark[1]:
+                    msg = 'bottom_left_mark bound, break'
+                    # if debug:
+                    #     print(msg)
+                    logging.info(msg)
                     break
-            elif row+1 >  num_rows:
+            elif row>=  num_rows:
+                msg = '> num_rows, break'
+                # if debug:
+                #     print(msg)
+                logging.info(msg)
                 break 
 
-            row += 1
+     
             # print(next_idx)
             layout_map[row,col] = next_idx
             cell_list[i].set_coord((row,col))
             i = next_idx
+            row += 1   
 
         if col==0:
             num_rows = row
+            print('num_rows ', num_rows)
 
         row = 0
         while True: # find next column
@@ -331,10 +277,11 @@ def find_layout(landmark_center_lst, cell_list, logging, debug=False):
                 #     print(msg)
                 logging.info(msg)
 
-                row += 1
-                first_cell = layout_map[row,col]                
+                row += 1  
+                first_cell = layout_map[row,col]   
+                           
                 continue
-            elif row+1 >  num_rows:
+            elif row >=  num_rows:
                 all_Done = True
                 break 
             
@@ -347,9 +294,11 @@ def find_layout(landmark_center_lst, cell_list, logging, debug=False):
         first_cell = next_col
         layout_map[row,col] = next_col
         cell_list[next_col].set_coord((row,col))
+        row += 1 
 
-    logging.info(layout_map)
-    print(layout_map)
+    col += 1
+    return layout_map, row, col
+
 
 def detect_landmark(small, logging, debug=False):
     # small = cv2.pyrDown(frame)
@@ -401,7 +350,9 @@ def detect_landmark(small, logging, debug=False):
         # approx = cv2.approxPolyDP(con, 3,True)
         # landmark_list.append(approx)
 
-    return landmark_center_lst
+    landmark_centers = np.array(landmark_center_lst).reshape(-1, 2)
+    # print(landmark_centers)
+    return landmark_centers
      
 
 def detect_grid(small, cell_list, logging, debug=False):
@@ -454,7 +405,8 @@ def detect_grid(small, cell_list, logging, debug=False):
         cell = Cell([cx,cy], approx_arr)
         cell_list.append(cell)
         
-    grid_idx_map = np.full(bin_img.shape, 0)
+    grid_idx_map = np.full(bin_img.shape, 0, dtype = np.uint8)
+    # grid_c3 = cv2.cvtColor(grid_idx_map, cv2.COLOR_GRAY2BGR)
     for i, cc in enumerate(cell_list):
         cv2.drawContours(grid_idx_map, [cc.polygon], -1, (i+1,i+1,i+1), -1)
     cv2.imwrite('grid_idx_map.png', grid_idx_map)
@@ -524,7 +476,7 @@ def check_aspect_ratio(new_rect, landmark_center_lst):
 def clean_polygon(comb, landmark_center_lst, logging):
     new_comb_lst = []
     num_marks = len(landmark_center_lst)
-    print('num_landmarks', num_marks)
+
     for rect in comb: 
         rect_coord = [ landmark_center_lst[i] for i in rect]
         rect_coord = np.array(rect_coord).reshape(-1, 2)
@@ -533,7 +485,7 @@ def clean_polygon(comb, landmark_center_lst, logging):
         convex = cv2.convexHull(rect_coord, False)
         if len(convex) < 4:
             msg = 'check convexHull, only 3 points, skip convex {}'.format(rect)
-            # print(msg)
+            print(msg)
             logging.info(msg)
             continue
 
@@ -543,8 +495,8 @@ def clean_polygon(comb, landmark_center_lst, logging):
                 pts = tuple(landmark_center_lst[i])
                 inSide = cv2.pointPolygonTest(convex, pts, False )
                 if inSide ==1:
-                    msg = '{} inside convex, skip'.format(i)
-                    # print(msg)
+                    msg = '{} inside convex {}, skip'.format(i, rect)
+                    print(msg)
                     logging.info(msg)
                     break
         if inSide ==1:
@@ -553,7 +505,7 @@ def clean_polygon(comb, landmark_center_lst, logging):
         approx = cv2.approxPolyDP(convex, polygon_box_dist,True)
         if len(approx) <4:
             msg = 'check approxPolyDP, only 3 points, skip convex {}'.format(rect)
-            # print(msg)
+            print(msg)
             logging.info(msg)
             continue            
 
@@ -568,11 +520,11 @@ def clean_polygon(comb, landmark_center_lst, logging):
                 new_comb_lst.append(new_rect)
             else:
                 msg = 'check_aspect_ratio failed, skip convex {}'.format(new_rect)
-                # print(msg)
+                print(msg)
                 logging.info(msg)                  
         else:
             msg = 'check_angle failed, skip convex {}'.format(new_rect)
-            # print(msg)
+            print(msg)
             logging.info(msg)           
   
     return new_comb_lst
@@ -588,14 +540,18 @@ def find_rect_combination(landmark_center_lst, logging):
 
     num_comb = len(comb)
     maxarea = 0
+    minarea = np.iinfo(np.int32).max
+    found = False
+
     for i in range(num_comb-1): 
         for j in range(i+1, num_comb):
             intersect = set(comb[i]) & set(comb[j])
             if len(intersect) !=1 and len(intersect) !=2:
-                # msg = '{} {} {} interset test failed'.format(comb[i], comb[j], intersect)
-                # logging.info(msg)
-                # print(msg)
+                msg = '{} {} {} interset test failed'.format(comb[i], comb[j], intersect)
+                logging.info(msg)
+                print(msg)
                 continue
+
 
             coord1 = [landmark_center_lst[i] for i in comb[i]]    
             poly1 = Polygon(coord1)
@@ -603,20 +559,110 @@ def find_rect_combination(landmark_center_lst, logging):
             poly2 = Polygon(coord2)
 
             intersect = poly1.intersection(poly2) 
+
+            msg = 'find_rect_combination {}, {}'.format(comb[i], comb[j])
+            logging.info(msg) 
+            print(msg)  
+
             if intersect.area < 0.1:
                 area = poly1.area+ poly2.area
                 if area > maxarea:
                     maxarea = area
                     p1 = i
                     p2 = j
-
-    msg = 'find_rect_combination {}, {}'.format(comb[p1], comb[p2])
-    logging.info(msg) 
-    print(msg)    
+                    found = True
+            else:
+                if intersect.area < minarea:
+                    minarea = intersect.area
+                    q1 = i
+                    q2 = j
+    
+    if found:
+        msg = 'find_rect_combination, intersect 0 {}, {}'.format(comb[p1], comb[p2])
+        logging.info(msg) 
+        print(msg)   
+        rect_lst = [comb[p1], comb[p2]]
+    else:
+        msg ='find_rect_combination, find min intersect area {}, {} {:.1f}'.format(
+            comb[q1], comb[q2], minarea)
+        logging.debug(msg) 
+        print(msg)     
+        rect_lst = [comb[q1], comb[q2]]      
     # print(poly1.area, poly2.area, poly1.area+ poly2.area)
 
+    return rect_lst
 
- 
+def layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug=False):
+
+############# rect 0
+    vertex_lst = [ landmark_centers[i] for i in rect_lst[0]]
+    rect_vertex = np.array(vertex_lst).reshape(-1, 2)
+    msg = 'layout_cell_2rect: rect_0: {}\n{}'.format(rect_lst[0], rect_vertex)
+    logging.info(msg)
+    print(msg)
+
+    landmark_coord1 = find_top_left_mark(rect_vertex, logging)  
+    layout_map1, row1, col1 = layout_cells(landmark_coord1, cell_list, logging, debug)
+    logging.info(layout_map1)
+    print(layout_map1, row1, col1)
+
+############# rect 1
+    vertex_lst = [ landmark_centers[i] for i in rect_lst[1]]
+    rect_vertex = np.array(vertex_lst).reshape(-1, 2)
+    msg = 'layout_cell_2rect: rect_1: {}\n{}'.format(rect_lst[1], rect_vertex)
+    logging.info(msg)
+    print(msg)
+
+    landmark_coord2 = find_top_left_mark(rect_vertex, logging)  
+    layout_map2, row2, col2 = layout_cells(landmark_coord2, cell_list, logging, debug)
+    logging.info(layout_map2)
+    print(layout_map2, row2, col2)
+
+############# intersect
+    intersect = list(set(rect_lst[0]) & set(rect_lst[1]))
+    msg = 'layout_cell_2rect: intersect {} '.format(intersect)
+    logging.info(msg)
+    print(msg)
+
+    if len(intersect) !=1 :
+        msg = 'Error: layout_cell_2rect: {} & {}= {}, intersection point >1'.format(rect_lst[0], rect_lst[1], intersect)
+        logging.debug(msg)
+        print(msg)
+        layout_map = layout_map2
+    else:
+        inter_pt = landmark_centers[intersect[0]]
+
+        if inter_pt in landmark_coord1[0]:
+            logging.info('intersection pt on the top left of rect0')
+            print('intersection pt on the top left of rect0')
+            layout_map2[row2:row2+row1, 0:col1] = layout_map1[0:row1, 0:col1]  
+            layout_map = layout_map2
+
+        elif inter_pt in landmark_coord1[1]:
+            logging.info('intersection pt on the bottom left of rect0')
+            print('intersection pt on the bottom left of rect0')
+            layout_map1[row1:row1+row2, 0:col2] = layout_map2[0:row2, 0:col2]  
+            layout_map = layout_map1
+
+        elif inter_pt in landmark_coord1[2]:
+            logging.info('intersection pt on the bottom right of rect0')
+            print('intersection pt on the bottom right of rect0')
+            if row1 >= row2:
+                layout_map1[row1-row2:row1, col1:col1+col2] = layout_map2[0:row2, 0:col2]  
+                layout_map = layout_map1
+            else:
+                layout_map = np.full((map_size,map_size), -1, dtype = np.int8)
+                layout_map[row2-row1:row2, 0:col1] = layout_map1[0:row1, 0:col1] 
+                layout_map[0:row2, col1:col1+col2] = layout_map2[0:row2, 0:col2] 
+
+        elif inter_pt in landmark_coord1[3]:
+            logging.info('intersection pt on the top right of rect0')
+            print('intersection pt on the top right of rect0')
+            layout_map1[0:row2, col1:col1+col2] = layout_map2[0:row2, 0:col2]  
+            layout_map = layout_map1        
+
+
+    return layout_map
 
 def identify_grid(frame, logging, debug=False):
     global img_w
@@ -632,16 +678,38 @@ def identify_grid(frame, logging, debug=False):
 
     detect_grid(small, cell_list, logging, debug)
 
-    landmark_center_lst = detect_landmark(small, logging, debug)
-    if len(landmark_center_lst) <4:
-        print('Error: landmark_center_lst < 4')
-        logging.debug('Error: landmark_center_lst < 4')
+    landmark_centers = detect_landmark(small, logging, debug)
+    num_landmarks = len(landmark_centers)
+    msg = 'num_landmarks: {}'.format(num_landmarks)
+    logging.info(msg)
+    print(msg)
+    if  num_landmarks !=4 and num_landmarks !=7:
+        msg = 'Error: num_landmarks should be 4 or 7, not {}'.format(num_landmarks)
+        print(msg)
+        logging.debug(msg)
         return None
 
-    find_rect_combination(landmark_center_lst, logging)
+    if num_landmarks > 4:
+        rect_lst = find_rect_combination(landmark_centers, logging)
+        if len(rect_lst) != 2:
+            msg = 'Error: number of rect combinations should be 2, not {}, {}'.format(
+                len(rect_lst), rect_lst)
+            print(msg)
+            logging.debug(msg)
+            return None
 
-    find_top_left_mark(landmark_center_lst, logging)  
-    find_layout(landmark_center_lst, cell_list, logging, debug)
+        print(rect_lst)
+
+        layout_map = layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug)
+
+
+
+    else:
+        landmark_coord = find_top_left_mark(landmark_centers, logging)  
+        layout_map, row, col = layout_cells(landmark_coord, cell_list, logging, debug)
+
+    logging.info(layout_map)
+    print(layout_map)
 
     for i, cc in enumerate(cell_list):
         cv2.drawContours(small, [cc.polygon], -1, (0,255,0), 1)
@@ -651,9 +719,9 @@ def identify_grid(frame, logging, debug=False):
         center_lst.append(cc.center)
     # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
 
-    for i, cc in enumerate(landmark_center_lst):
+    for i, cc in enumerate(landmark_centers):
         strText = '[{}]'.format(i)
-        cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 255))
+        cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 200))
 
     cv2.imwrite('grid_detection.png', small)
 
@@ -715,7 +783,12 @@ if __name__ == "__main__":
 
         cv2.imwrite(fname, frame)
         # cv2.imwrite('grid_img.png', frame)
-        frame = cv2.imread('grid_img.png')
+        frame = cv2.imread('grid_img3.jpg')
         
+        if frame is None:
+            print('cannot read grid_img.png')
+        else:
+            identify_grid(frame, logging, args.show_debugmsg)
 
-        identify_grid(frame, logging, args.show_debugmsg)
+
+
