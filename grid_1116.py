@@ -38,8 +38,12 @@ th_overlap = 100
 img_w = None
 img_h = None
 
-# rect_combination
-polygon_box_dist = 20
+# rect_combination, polygon
+insideDist_th = 50
+polygon_box_dist_th = 20
+interior_angle_min = 70
+interior_angle_max = 110
+aspect_ratio_th = 0.6
 map_size = 15
 
 grid_idx_map = None
@@ -423,17 +427,17 @@ def check_angle(new_rect, landmark_center_lst):
         v = c - b
         dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
         angle = arccos(clip(dd, -1, 1))  *180/pi
-        if 60 < angle < 120:
+        if interior_angle_min < angle < interior_angle_max:
             u = b - c
             v = d - c
             dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
             angle = arccos(clip(dd, -1, 1))  *180/pi
-            if 60 < angle < 120:
+            if interior_angle_min < angle < interior_angle_max:
                 u = c - d
                 v = a - d
                 dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
                 angle = arccos(clip(dd, -1, 1))  *180/pi
-                if 60 < angle < 120:
+                if interior_angle_min < angle < interior_angle_max:
                     ret = True
     except:
         msg = 'Err: {} check_angle'.format(new_rect)
@@ -467,8 +471,11 @@ def check_aspect_ratio(new_rect, landmark_center_lst):
         ratio2 = du/dv
     else:
         ratio2 = dv/du    
-    # print(ratio1, ratio2)
-    if ratio1 > 0.4 and ratio2 > 0.4:
+
+    msg = 'rect ratio: {}, ratio1 {:.2f}, ratio2 {:.2f}'.format(new_rect, ratio1, ratio2)
+    logging.info(msg)
+    # print(msg)
+    if ratio1 > aspect_ratio_th and ratio2 > aspect_ratio_th:
         ret = True
 
     return ret
@@ -485,7 +492,7 @@ def clean_polygon(comb, landmark_center_lst, logging):
         convex = cv2.convexHull(rect_coord, False)
         if len(convex) < 4:
             msg = 'check convexHull, only 3 points, skip convex {}'.format(rect)
-            print(msg)
+            # print(msg)
             logging.info(msg)
             continue
 
@@ -493,19 +500,19 @@ def clean_polygon(comb, landmark_center_lst, logging):
         for i in range(num_marks):
             if i not in rect:
                 pts = tuple(landmark_center_lst[i])
-                inSide = cv2.pointPolygonTest(convex, pts, False )
-                if inSide ==1:
-                    msg = '{} inside convex {}, skip'.format(i, rect)
-                    print(msg)
+                inSideDist = cv2.pointPolygonTest(convex, pts, True )
+                if inSideDist > insideDist_th:
+                    msg = 'pt {} inside convex {}, skip'.format(i, rect)
+                    # print(msg)
                     logging.info(msg)
                     break
         if inSide ==1:
             continue
 
-        approx = cv2.approxPolyDP(convex, polygon_box_dist,True)
+        approx = cv2.approxPolyDP(convex, polygon_box_dist_th,True)
         if len(approx) <4:
             msg = 'check approxPolyDP, only 3 points, skip convex {}'.format(rect)
-            print(msg)
+            # print(msg)
             logging.info(msg)
             continue            
 
@@ -520,11 +527,11 @@ def clean_polygon(comb, landmark_center_lst, logging):
                 new_comb_lst.append(new_rect)
             else:
                 msg = 'check_aspect_ratio failed, skip convex {}'.format(new_rect)
-                print(msg)
+                # print(msg)
                 logging.info(msg)                  
         else:
             msg = 'check_angle failed, skip convex {}'.format(new_rect)
-            print(msg)
+            # print(msg)
             logging.info(msg)           
   
     return new_comb_lst
@@ -549,9 +556,8 @@ def find_rect_combination(landmark_center_lst, logging):
             if len(intersect) !=1 and len(intersect) !=2:
                 msg = '{} {} {} interset test failed'.format(comb[i], comb[j], intersect)
                 logging.info(msg)
-                print(msg)
+                # print(msg)
                 continue
-
 
             coord1 = [landmark_center_lst[i] for i in comb[i]]    
             poly1 = Polygon(coord1)
@@ -560,7 +566,7 @@ def find_rect_combination(landmark_center_lst, logging):
 
             intersect = poly1.intersection(poly2) 
 
-            msg = 'find_rect_combination {}, {}'.format(comb[i], comb[j])
+            msg = 'find_rect_combination {}, {}, area {:.1f}'.format(comb[i], comb[j], intersect.area)
             logging.info(msg) 
             print(msg)  
 
@@ -662,7 +668,7 @@ def layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug=Fals
             layout_map = layout_map1        
 
 
-    return layout_map
+    return layout_map, landmark_coord1, landmark_coord2
 
 def identify_grid(frame, logging, debug=False):
     global img_w
@@ -699,14 +705,16 @@ def identify_grid(frame, logging, debug=False):
             return None
 
         print(rect_lst)
-
-        layout_map = layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug)
-
-
+        layout_map, landmark_coord1, landmark_coord2 = layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug)
+        rect_coord1 = np.array(landmark_coord1).reshape(-1, 2)
+        rect_coord2 = np.array(landmark_coord2).reshape(-1, 2)
+        cv2.drawContours(small, [rect_coord1, rect_coord2], -1, (0, 0, 0), 2)
 
     else:
         landmark_coord = find_top_left_mark(landmark_centers, logging)  
         layout_map, row, col = layout_cells(landmark_coord, cell_list, logging, debug)
+        rect_coord = np.array(landmark_coord).reshape(-1, 2)
+        cv2.drawContours(small, [rect_coord], -1, (0, 0, 0), 2)
 
     logging.info(layout_map)
     print(layout_map)
@@ -783,7 +791,7 @@ if __name__ == "__main__":
 
         cv2.imwrite(fname, frame)
         # cv2.imwrite('grid_img.png', frame)
-        frame = cv2.imread('grid_img3.jpg')
+        frame = cv2.imread('grid_img1.jpg')
         
         if frame is None:
             print('cannot read grid_img.png')
