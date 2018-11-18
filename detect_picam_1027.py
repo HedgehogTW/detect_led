@@ -531,9 +531,9 @@ def main():
         client.publish(mqtt_topic, 'video start', qos)
     
 
-    grid_img = cv2.imread('grid_img.png')
+    grid_img = cv2.imread('grid_img1.jpg')
     if grid_img is None:
-        print('imread grid_img.png failed')
+        print('imread grid_img1.jpg failed')
         logging.debug('imread grid_img.png failed')
         return
 

@@ -553,7 +553,7 @@ def find_rect_combination(landmark_center_lst, logging):
     for i in range(num_comb-1): 
         for j in range(i+1, num_comb):
             intersect = set(comb[i]) & set(comb[j])
-            if len(intersect) !=1 and len(intersect) !=2:
+            if len(intersect) !=1: # and len(intersect) !=2:
                 msg = '{} {} {} interset test failed'.format(comb[i], comb[j], intersect)
                 logging.info(msg)
                 # print(msg)
