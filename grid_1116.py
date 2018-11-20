@@ -11,13 +11,30 @@ import time
 from time import localtime, strftime 
 from itertools import combinations 
 from shapely.geometry import Polygon
+from sys import platform as _platform
+if _platform == "linux" or _platform == "linux2": # linux
+    from picamera import PiCamera
+    from picamera.array import PiRGBArray
+
+    ini_disable_picam = False
+    ini_show_debugmsg = False
+    ini_show_image = False
+
+else: # PC, read video
+    ini_disable_picam = True
+    ini_show_debugmsg = True
+    ini_show_image = True
+
+args = None
+
+
 # import pathlib
 
 # 底下是 detect_grid 參數
 grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
 th_block_size = 33
-th_c = -20
+th_c = -10
 cell_area_min = 1500
 cell_area_max = 10000
 cell_ratio_min = 0.15
@@ -27,9 +44,9 @@ polygon_dist = 10
 
 
 # 底下是 detect_landmark 參數
-th_mark = 240
+th_mark = 60 # 240
 mark_area_min = 40
-mark_area_max = 150
+mark_area_max = 160
 mark_ratio_min = 0.75
 
 # 底下是 find_layout 參數
@@ -41,8 +58,8 @@ img_h = None
 # rect_combination, polygon
 insideDist_th = 50
 polygon_box_dist_th = 20
-interior_angle_min = 70
-interior_angle_max = 110
+interior_angle_min = 60
+interior_angle_max = 120
 aspect_ratio_th = 0.6
 map_size = 15
 
@@ -306,13 +323,16 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
 
 def detect_landmark(small, logging, debug=False):
     # small = cv2.pyrDown(frame)
-    img_b, img_g, img_r = cv2.split(small) 
-    th, bin_b = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY) 
-    th, bin_g = cv2.threshold(img_g, th_mark, 255, cv2.THRESH_BINARY)
-    th, bin_r = cv2.threshold(img_r, th_mark, 255, cv2.THRESH_BINARY)
-    landmark = bin_b & bin_g #& bin_r
-    median = cv2.medianBlur(landmark, 3)
-    landmark = cv2.dilate(median, landmark_kernel, iterations = 1)
+    img_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    th, landmark = cv2.threshold(img_gray, th_mark, 255, cv2.THRESH_BINARY)
+
+    # img_b, img_g, img_r = cv2.split(small) 
+    # th, bin_b = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY) 
+    # th, bin_g = cv2.threshold(img_g, th_mark, 255, cv2.THRESH_BINARY)
+    # th, bin_r = cv2.threshold(img_r, th_mark, 255, cv2.THRESH_BINARY)
+    # landmark = bin_b & bin_g #& bin_r
+    # median = cv2.medianBlur(landmark, 3)
+    landmark = cv2.dilate(landmark, landmark_kernel, iterations = 1)
 
     # if debug:
     #     cv2.imshow('landmark',landmark)
@@ -325,6 +345,10 @@ def detect_landmark(small, logging, debug=False):
     landmark_center_lst = []    
     for con in contours:
         area = cv2.contourArea(con)
+        msg = 'detect_landmark: area: {}'.format(area)
+        # print(msg)
+        logging.info(msg)
+
         if area < mark_area_min or area > mark_area_max:
             continue
 
@@ -341,7 +365,9 @@ def detect_landmark(small, logging, debug=False):
             ratio = height/width
         else:
             ratio = width/height
-        # print('ratio ', ratio)
+        msg = 'detect_landmark: ratio: {}'.format(ratio)
+        # print(msg)
+        logging.info(msg)
         if ratio < mark_ratio_min:
             continue
 
@@ -356,6 +382,18 @@ def detect_landmark(small, logging, debug=False):
 
     landmark_centers = np.array(landmark_center_lst).reshape(-1, 2)
     # print(landmark_centers)
+
+    for i, cc in enumerate(landmark_centers):
+        strText = '{}'.format(i)
+        cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
+        cv2.circle(small,(cc[0], cc[1]),2,(0,0,255),2)
+
+    cv2.imwrite('detect_landmark.jpg', small)
+    if args.show_image:
+        cv2.imshow('detect_landmark',small)
+        key = cv2.waitKey(0)    
+
+
     return landmark_centers
      
 
@@ -369,9 +407,11 @@ def detect_grid(small, cell_list, logging, debug=False):
 
     _, contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    # if debug:
-    #     bin_color = cv2.cvtColor(bin_img,cv2.COLOR_GRAY2BGR)
-    #     cv2.drawContours(bin_color, contours, -1, (0,255,0), 1)
+    if args.show_image:
+        bin_color = cv2.cvtColor(bin_img,cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(bin_color, contours, -1, (0,255,0), 1)
+        cv2.imshow('detect_grid',bin_color)
+        key = cv2.waitKey(0)    
     
     center_lst = []    
     for con in contours:
@@ -415,6 +455,10 @@ def detect_grid(small, cell_list, logging, debug=False):
         cv2.drawContours(grid_idx_map, [cc.polygon], -1, (i+1,i+1,i+1), -1)
     cv2.imwrite('grid_idx_map.png', grid_idx_map)
 
+    msg = 'find {} grid, output to grid_idx_map.png'.format(len(cell_list))
+    print(msg)
+    logging.info(msg)    
+
 def check_angle(new_rect, landmark_center_lst):
     a = array(landmark_center_lst[new_rect[0]] )
     b = array(landmark_center_lst[new_rect[1]] )
@@ -425,18 +469,31 @@ def check_angle(new_rect, landmark_center_lst):
     try :
         u = a - b
         v = c - b
+        msg = 'u {}, v {}, dot(u,v) {}, norm(u) {:.2f}, norm(v) {:.2f}'.format(u, v, dot(u,v),norm(u),norm(v))
+        logging.info(msg)   
         dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
         angle = arccos(clip(dd, -1, 1))  *180/pi
+        # if args.show_debugmsg:
+        #     print('angle1:', angle)
+        msg = 'a{}, b{}, c{}, angle {:.2f}'.format(a, b, c, angle)
+        logging.info(msg)
         if interior_angle_min < angle < interior_angle_max:
             u = b - c
             v = d - c
             dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
             angle = arccos(clip(dd, -1, 1))  *180/pi
+            msg = 'b{}, c{}, d{}, angle {:.2f}'.format(b, c, d, angle)
+            logging.info(msg)
+
             if interior_angle_min < angle < interior_angle_max:
                 u = c - d
                 v = a - d
                 dd = dot(u,v)/norm(u)/norm(v) # -> cosine of the angle
                 angle = arccos(clip(dd, -1, 1))  *180/pi
+                
+                msg = 'c{}, d{}, a{}, angle {:.2f}'.format(c, d, a, angle)
+                logging.info(msg)
+
                 if interior_angle_min < angle < interior_angle_max:
                     ret = True
     except:
@@ -444,6 +501,10 @@ def check_angle(new_rect, landmark_center_lst):
         print(msg)
         logging.debug(msg)
         ret = True
+
+    if not ret:
+        msg = 'check_angle fail min{}, max{}'.format(interior_angle_min,interior_angle_max )
+        logging.info(msg)
 
     return ret
 
@@ -487,9 +548,21 @@ def clean_polygon(comb, landmark_center_lst, logging):
     for rect in comb: 
         rect_coord = [ landmark_center_lst[i] for i in rect]
         rect_coord = np.array(rect_coord).reshape(-1, 2)
-        # print(rect)
-        logging.info(rect)
         convex = cv2.convexHull(rect_coord, False)
+
+        msg = 'clean_polygon: rect {}'.format(rect)
+        # if args.show_debugmsg:
+        #     print(msg)
+        #     print(rect_coord)
+
+        logging.info(msg)
+        logging.info(rect_coord)
+
+        msg = 'convex {}'.format(convex)
+        logging.info(msg)
+        # if args.show_debugmsg:
+        #     print(msg)        
+
         if len(convex) < 4:
             msg = 'check convexHull, only 3 points, skip convex {}'.format(rect)
             # print(msg)
@@ -519,9 +592,12 @@ def clean_polygon(comb, landmark_center_lst, logging):
         convex = np.squeeze(convex)
         new_rect = []
         for pt in convex:
-            i = np.argwhere(rect_coord ==pt)[0][0]
-            new_rect.append(rect[i])
+            for i, rectPt in enumerate(rect_coord):
+                if np.all(pt==rectPt):
+                    new_rect.append(rect[i])
+                    break
 
+        logging.info('new_rect:{}'.format(new_rect))
         if check_angle(new_rect, landmark_center_lst):
             if check_aspect_ratio(new_rect, landmark_center_lst):
                 new_comb_lst.append(new_rect)
@@ -670,22 +746,24 @@ def layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug=Fals
 
     return layout_map, landmark_coord1, landmark_coord2
 
-def identify_grid(frame, logging, debug=False):
+def identify_grid(landmark_img, grid_img, logging, debug=False):
     global img_w
     global img_h
 
     cell_list = []
     center_lst = []
 
-    small = cv2.pyrDown(frame)
-    img_w = small.shape[1]
-    img_h = small.shape[0]
+    small_grid_img = cv2.pyrDown(grid_img)
+    small_landmark = cv2.pyrDown(landmark_img)
+    img_w = small_landmark.shape[1]
+    img_h = small_landmark.shape[0]
     print('identify_grid: small image size (w, h): ', img_w, img_h)
 
-    detect_grid(small, cell_list, logging, debug)
+    detect_grid(small_grid_img, cell_list, logging, debug)
 
-    landmark_centers = detect_landmark(small, logging, debug)
+    landmark_centers = detect_landmark(small_landmark, logging, debug)
     num_landmarks = len(landmark_centers)
+
     msg = 'num_landmarks: {}'.format(num_landmarks)
     logging.info(msg)
     print(msg)
@@ -708,49 +786,57 @@ def identify_grid(frame, logging, debug=False):
         layout_map, landmark_coord1, landmark_coord2 = layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug)
         rect_coord1 = np.array(landmark_coord1).reshape(-1, 2)
         rect_coord2 = np.array(landmark_coord2).reshape(-1, 2)
-        cv2.drawContours(small, [rect_coord1, rect_coord2], -1, (0, 0, 0), 2)
+        cv2.drawContours(small_grid_img, [rect_coord1, rect_coord2], -1, (0, 0, 0), 2)
 
     else:
         landmark_coord = find_top_left_mark(landmark_centers, logging)  
         layout_map, row, col = layout_cells(landmark_coord, cell_list, logging, debug)
         rect_coord = np.array(landmark_coord).reshape(-1, 2)
-        cv2.drawContours(small, [rect_coord], -1, (0, 0, 0), 2)
+        cv2.drawContours(small_grid_img, [rect_coord], -1, (0, 0, 0), 2)
 
     logging.info(layout_map)
     print(layout_map)
 
     for i, cc in enumerate(cell_list):
-        cv2.drawContours(small, [cc.polygon], -1, (0,255,0), 1)
+        cv2.drawContours(small_grid_img, [cc.polygon], -1, (0,255,0), 1)
         strText = '{}'.format(i)
-        cv2.putText(small, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
-        cv2.circle(small,(cc.center[0], cc.center[1]),2,(0,0,255),2)
+        cv2.putText(small_grid_img, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
+        cv2.circle(small_grid_img,(cc.center[0], cc.center[1]),2,(0,0,255),2)
         center_lst.append(cc.center)
     # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
 
     for i, cc in enumerate(landmark_centers):
         strText = '[{}]'.format(i)
-        cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 200))
+        cv2.putText(small_grid_img, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 200))
 
-    cv2.imwrite('grid_detection.png', small)
+    cv2.imwrite('grid_detection.png', small_grid_img)
 
     if debug:
-        cv2.imshow('cell_list',small)
+        cv2.imshow('cell_list',small_grid_img)
         key = cv2.waitKey(0)
 
     return layout_map, center_lst
 
-if __name__ == "__main__":
-    ini_show_debugmsg = True
-    ini_show_image = True
+def main():
+    global ini_disable_picam
+    global ini_show_debugmsg
+    global ini_show_image
+    global args  
 
     parser = argparse.ArgumentParser(description='grid')   
+    parser.add_argument('--disable_picam', action="store_true", dest='disable_picam', default=ini_disable_picam, help='disable picam')
+    parser.add_argument('--enable_picam', action="store_false", dest='disable_picam', default=ini_disable_picam, help='enable picam')
     parser.add_argument('--show_image', action="store_true", dest='show_image', default=ini_show_image, help='show debug image')
     parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
-    parser.add_argument('-f', action="store", dest='video_name', default='gridled_1(1).h264', help='input video file name')
+    parser.add_argument('-fm', action="store", dest='landmark_name', default='3000.jpg', help='input landmark image name')
+    parser.add_argument('-fg', action="store", dest='grid_name', default='50000.jpg', help='input grid image name')    
     args = parser.parse_args()
 
+    print('disable_picam:', args.disable_picam)
+    print('show_image:   ', args.show_image)
+    print('show_debugmsg:', args.show_debugmsg)    
 
     logpath = os.path.dirname('log/') 
     if not os.path.exists(logpath):
@@ -771,32 +857,43 @@ if __name__ == "__main__":
     )
     logging.info("Start of the grid detection")
 
-    print('read grid video:', args.video_name)
-    cap = cv2.VideoCapture(args.video_name)
-    bOpenVideo = cap.isOpened()
-    print('Open grid video: {0} '.format(bOpenVideo))
-    if bOpenVideo == True:
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        print('width {}, height {} fps {}'.format(width, height, fps))
-        for i in range(10):
-            bVideoRead, frame = cap.read()  
-        cap.release()
-
-        fnlst = args.video_name.rsplit('.',1) 
-        fname = fnlst[0] + '_sample.jpg'
-
-        cv2.imwrite(fname, frame)
-        # cv2.imwrite('grid_img.png', frame)
-        frame = cv2.imread('grid_img1.jpg')
+    if args.disable_picam:
+        print('load landmark image:', args.landmark_name)
+        landmark_img = cv2.imread(args.landmark_name)
         
-        if frame is None:
-            print('cannot read grid_img.png')
-        else:
-            identify_grid(frame, logging, args.show_debugmsg)
+        print('load grid image:', args.grid_name)
+        grid_img = cv2.imread(args.grid_name)
+        
+    else:
+        with picamera.PiCamera() as camera:
+            camera.awb_mode = 'off'
+            camera.awb_gains = (1.7,1.7)
+            camera.exposure_mode =  'off'
+
+            camera.iso = 100
+            camera.resolution = (1296,976)
+
+            camera.framerate = 5
+            camera.shutter_speed = 3000
+            camera.capture('landmark.jpg')
+
+            camera.shutter_speed = 50000
+            camera.capture('grid.jpg')
+
+            landmark_img = cv2.imread('landmark.jpg')
+            grid_img = cv2.imread('grid.jpg')
 
 
+    if landmark_img is None:
+        print('cannot read landmark.jpg')
+        logging.debug("cannot read landmark.jpg")
+    elif grid_img is None:
+        print('cannot read grid.jpg')
+        logging.debug("cannot read grid.jpg")
+    else:
+        identify_grid(landmark_img, grid_img, logging, args.show_debugmsg)
 
+
+if __name__ == "__main__":
+    main()
