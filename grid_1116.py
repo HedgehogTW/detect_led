@@ -207,7 +207,7 @@ def move_right(curr_idx, cell_list, logging, debug=False):
     else:
         next_idx = int(np.median(next_mask))-1
 
-    msg = 'move_right: idx {}, nonzero {}'.format(next_idx, nonzero)
+    msg = 'move_right: curr_idx {}, next_idx {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
     # if debug:
     #     print(msg)
     logging.info(msg)
@@ -260,6 +260,9 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
                     # if debug:
                     #     print(msg)
                     logging.info(msg)
+                    num_rows = row
+                    logging.info('num_rows '.format( num_rows))
+                    print('num_rows ', num_rows)
                     break
             elif row>=  num_rows:
                 msg = '> num_rows, break'
@@ -275,9 +278,9 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
             i = next_idx
             row += 1   
 
-        if col==0:
-            num_rows = row
-            print('num_rows ', num_rows)
+        # if col==0:
+        #     num_rows = row
+        #     print('num_rows ', num_rows)
 
         row = 0
         while True: # find next column
@@ -298,11 +301,15 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
                 #     print(msg)
                 logging.info(msg)
 
+
                 row += 1  
+                all_Done = True
+                break                
+                print(row, col)
                 first_cell = layout_map[row,col]   
                            
                 continue
-            elif row >=  num_rows:
+            elif num_rows>0 and row >=  num_rows:
                 all_Done = True
                 break 
             
@@ -318,7 +325,7 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
         row += 1 
 
     col += 1
-    return layout_map, row, col
+    return layout_map, num_rows, col
 
 
 def detect_landmark(small, logging, debug=False):
@@ -383,15 +390,15 @@ def detect_landmark(small, logging, debug=False):
     landmark_centers = np.array(landmark_center_lst).reshape(-1, 2)
     # print(landmark_centers)
 
-    for i, cc in enumerate(landmark_centers):
-        strText = '{}'.format(i)
-        cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
-        cv2.circle(small,(cc[0], cc[1]),2,(0,0,255),2)
+    # for i, cc in enumerate(landmark_centers):
+    #     strText = '{}'.format(i)
+    #     cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
+    #     cv2.circle(small,(cc[0], cc[1]),2,(0,0,255),2)
 
-    cv2.imwrite('detect_landmark.jpg', small)
-    if args.show_image:
-        cv2.imshow('detect_landmark',small)
-        key = cv2.waitKey(0)    
+    # cv2.imwrite('detect_landmark.jpg', small)
+    # if args.show_image:
+    #     cv2.imshow('detect_landmark',small)
+    #     key = cv2.waitKey(0)    
 
 
     return landmark_centers
@@ -715,10 +722,16 @@ def layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug=Fals
         inter_pt = landmark_centers[intersect[0]]
 
         if inter_pt in landmark_coord1[0]:
-            logging.info('intersection pt on the top left of rect0')
-            print('intersection pt on the top left of rect0')
-            layout_map2[row2:row2+row1, 0:col1] = layout_map1[0:row1, 0:col1]  
-            layout_map = layout_map2
+            if inter_pt in landmark_coord2[1]:
+                logging.info('intersection pt on the top left of rect0, bottom left of rect1')
+                print('intersection pt on the top left of rect0, bottom left of rect1')
+                layout_map2[row2:row2+row1, 0:col1] = layout_map1[0:row1, 0:col1]  
+                layout_map = layout_map2
+            elif inter_pt in landmark_coord2[3]:
+                logging.info('intersection pt on the top left of rect0, top right of rect1')
+                print('intersection pt on the top left of rect0, top right of rect1')
+                layout_map2[0:row1, col2:col2+col1] = layout_map1[0:row1, 0:col1]  
+                layout_map = layout_map2
 
         elif inter_pt in landmark_coord1[1]:
             logging.info('intersection pt on the bottom left of rect0')
@@ -759,8 +772,6 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
     img_h = small_landmark.shape[0]
     print('identify_grid: small image size (w, h): ', img_w, img_h)
 
-    detect_grid(small_grid_img, cell_list, logging, debug)
-
     landmark_centers = detect_landmark(small_landmark, logging, debug)
     num_landmarks = len(landmark_centers)
 
@@ -772,6 +783,27 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
         print(msg)
         logging.debug(msg)
         return None
+
+    detect_grid(small_grid_img, cell_list, logging, debug)
+
+    for i, cc in enumerate(cell_list):
+        cv2.drawContours(small_grid_img, [cc.polygon], -1, (0,255,0), 1)
+        strText = '{}'.format(i)
+        cv2.putText(small_grid_img, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
+        cv2.circle(small_grid_img,(cc.center[0], cc.center[1]),2,(0,0,255),2)
+        center_lst.append(cc.center)
+    # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
+
+    for i, cc in enumerate(landmark_centers):
+        strText = '[{}]'.format(i)
+        cv2.putText(small_grid_img, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255,0))
+        cv2.circle(small_grid_img,(cc[0], cc[1]),2,(0,255,255),2)
+
+    cv2.imwrite('grid_detection.jpg', small_grid_img)
+
+    if debug:
+        cv2.imshow('grid_detection',small_grid_img)
+        key = cv2.waitKey(0)
 
     if num_landmarks > 4:
         rect_lst = find_rect_combination(landmark_centers, logging)
@@ -797,23 +829,7 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
     logging.info(layout_map)
     print(layout_map)
 
-    for i, cc in enumerate(cell_list):
-        cv2.drawContours(small_grid_img, [cc.polygon], -1, (0,255,0), 1)
-        strText = '{}'.format(i)
-        cv2.putText(small_grid_img, strText, (cc.center[0], cc.center[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
-        cv2.circle(small_grid_img,(cc.center[0], cc.center[1]),2,(0,0,255),2)
-        center_lst.append(cc.center)
-    # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
-
-    for i, cc in enumerate(landmark_centers):
-        strText = '[{}]'.format(i)
-        cv2.putText(small_grid_img, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0, 200))
-
-    cv2.imwrite('grid_detection.png', small_grid_img)
-
-    if debug:
-        cv2.imshow('cell_list',small_grid_img)
-        key = cv2.waitKey(0)
+ 
 
     return layout_map, center_lst
 
