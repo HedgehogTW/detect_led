@@ -8,7 +8,7 @@ import argparse
 import cv2
 import numpy as np
 from numpy import linalg as LA
-
+import pickle
 from datetime import datetime
 import scipy.stats
 from scipy.spatial.distance import cdist
@@ -18,7 +18,7 @@ from time import localtime, strftime
 import logging
 import paho.mqtt.client as mqtt
 import paho.mqtt.publish as publish
-import grid_1116 as grid
+import pathlib
 
 from sys import platform as _platform
 if _platform == "linux" or _platform == "linux2": # linux
@@ -530,27 +530,36 @@ def main():
         client.loop_start()
         client.publish(mqtt_topic, 'video start', qos)
     
-
-    grid_img = cv2.imread('grid_img1.jpg')
-    if grid_img is None:
-        print('imread grid_img1.jpg failed')
-        logging.debug('imread grid_img.png failed')
+  
+    parktime_fname = 'grid_map.pickle'
+    parttm_path = pathlib.Path(parktime_fname)    
+    if parttm_path.is_file():
+        print('{} exists'.format(parktime_fname))
+        f = open(parktime_fname, 'rb')
+        layout_map = pickle.load(f)
+        f.close()
+    else:
+        print('{} does not exist'.format(parktime_fname))
+        logging.debug('{} does not exist'.format(parktime_fname))
         return
 
-    layout_map, center_lst = grid.identify_grid(grid_img, logging, args.show_debugmsg)
-    if layout_map is None:
-        print('Error in identify_grid')
-        logging.debug('Error in identify_grid')
-        return       
+    parktime_fname = 'center_lst.pickle'
+    parttm_path = pathlib.Path(parktime_fname)    
+    if parttm_path.is_file():
+        print('{} exists'.format(parktime_fname))
+        f = open(parktime_fname, 'rb')
+        center_lst = pickle.load(f)
+        f.close()
+    else:
+        print('{} does not exist'.format(parktime_fname))
+        logging.debug('{} does not exist'.format(parktime_fname))
+        return
 
     grid_idx_map = cv2.imread('grid_idx_map.png')
     if grid_idx_map is None:
         print('imread grid_idx_map.png failed')
         logging.debug('imread grid_idx_map.png failed')
         return
-
-
-    # print('layout_map', layout_map)
 
     if args.show_posimg:
         posimg = cv2.imread('grid_detection.png')

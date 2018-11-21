@@ -34,7 +34,7 @@ args = None
 grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
 th_block_size = 33
-th_c = -10
+th_c = -1 #-10
 cell_area_min = 1500
 cell_area_max = 10000
 cell_ratio_min = 0.15
@@ -63,7 +63,7 @@ polygon_box_dist_th = 20
 interior_angle_min = 60
 interior_angle_max = 120
 aspect_ratio_th = 0.6
-map_size = 24 # 要大於2倍 grid
+map_size = 30 # 要大於2倍 grid
 
 
 grid_idx_map = None
@@ -235,11 +235,11 @@ def move_left(curr_idx, cell_list):
     return next_idx
 
 def gen_grid_map(cell_list):
-    mapsz = 30
-    layout_map = np.full((mapsz,mapsz), -1, dtype = np.int8)
+
+    layout_map = np.full((map_size,map_size), -1, dtype = np.int8)
     cell_stack = []
-    x = mapsz //2
-    y = mapsz //2
+    x = map_size //2
+    y = map_size //2
     first_cell = 0
     cell_stack.append((first_cell, x, y))
 
@@ -359,11 +359,20 @@ def detect_landmark(small):
 def detect_grid(small, cell_list):
     global grid_idx_map
 
-    gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
+    img_b, img_g, img_r = cv2.split(small)  
+    img_b = img_b.astype(np.float32)
+    img_b = img_b + 1
+    ratio_rb = img_r/img_b
+    maxrb = np.max(ratio_rb)
+    ratio_rb = ratio_rb * 255 / maxrb
+    gray = ratio_rb.astype(np.uint8)
+    cv2.imwrite('img_rb.jpg', gray)
+    # gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
     bin_img = cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,th_block_size,th_c)
     bin_img = cv2.dilate(bin_img, grid_kernel, iterations = 1)
     bin_img = 255 - bin_img
-
+    cv2.imwrite('img_rb_thresh.jpg', bin_img)
+    
     _, contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     if args.show_image:
@@ -822,7 +831,7 @@ def main():
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
     parser.add_argument('-fm', action="store", dest='landmark_name', default='3000.jpg', help='input landmark image name')
-    parser.add_argument('-fg', action="store", dest='grid_name', default='grid_img.png', help='input grid image name')    
+    parser.add_argument('-fg', action="store", dest='grid_name', default='50000.jpg', help='input grid image name')    
     args = parser.parse_args()
 
     print('disable_picam:', args.disable_picam)

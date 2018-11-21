@@ -27,19 +27,28 @@ mask_rb = ratio_rb > 1.3
 mask_gb = ratio_gb > 1.2
 mask = mask_rb & mask_rb
 print(ratio_rb)
-print(mask)
+# print(mask)
 color = np.full(small_grid_img.shape, (0, 0, 0), dtype=np.uint8)
 color[mask] = (255,255,255)
 
 cv2.imwrite('yellow.jpg', color)
+# cv2.imshow('grid_detection',color)
+# key = cv2.waitKey(0)
 
+# ratio_rb = ratio_rb *img_b/255
+# maxrb = np.max(ratio_rb)
+# print(maxrb)
+# ratio_rb *= ratio_gb
 
-cv2.imshow('grid_detection',color)
-key = cv2.waitKey(0)
+ratio_rb = ratio_rb * 255 / maxrb
 
-img_rb = ratio_rb * 255 / maxrb
-img_rb = img_rb.astype(np.uint8)
+maxrb = np.max(ratio_rb)
+print(maxrb)
+
+img_rb = ratio_rb.astype(np.uint8)
 cv2.imwrite('img_rb.jpg', img_rb)
-
 cv2.imshow('img_rb',img_rb)
 key = cv2.waitKey(0)
+
+maxrb = np.max(img_rb)
+print(maxrb)
