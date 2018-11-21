@@ -40,7 +40,7 @@ cell_area_max = 10000
 cell_ratio_min = 0.15
 cell_ratio_max = 0.55
 cell_compact_th = 50
-polygon_dist = 10
+polygon_dist = 15
 
 
 # 底下是 detect_landmark 參數
@@ -52,8 +52,10 @@ mark_ratio_min = 0.75
 # 底下是 find_layout 參數
 extend_dist = 30
 th_overlap = 100
+left_top_dist_gap = 10
 img_w = None
 img_h = None
+
 
 # rect_combination, polygon
 insideDist_th = 50
@@ -61,7 +63,8 @@ polygon_box_dist_th = 20
 interior_angle_min = 60
 interior_angle_max = 120
 aspect_ratio_th = 0.6
-map_size = 15
+map_size = 24 # 要大於2倍 grid
+
 
 grid_idx_map = None
 
@@ -131,11 +134,7 @@ class Cell:
         self.coord = coord
 
 
-def find_top_left_mark(landmark_center_lst, logging):
-    # global top_left_mark
-    # global bottom_left_mark
-    # global bottom_right_mark
-    # global top_right_mark
+def find_top_left_mark(landmark_center_lst):
 
     top_left, bottom_left, bottom_right, top_right = find_x1x2x3x4(landmark_center_lst)
 
@@ -158,16 +157,8 @@ def find_top_left_mark(landmark_center_lst, logging):
 
     return top_left_mark, bottom_left_mark, bottom_right_mark, top_right_mark
 
-def move_down(curr_idx, cell_list, logging, debug=False):
+def calculate_overlap(curr_idx, cell_ext):
     cell_mask = np.zeros(grid_idx_map.shape, dtype=np.uint8)
-    # print(cell_list[i].polygon)
-
-    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
-                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
-    cell_ext[1][1] += extend_dist
-    cell_ext[2][1] += extend_dist
-    # print(cell_ext)
-
     cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
     next_mask = cell_mask & grid_idx_map 
     next_mask = next_mask[next_mask!=curr_idx+1]
@@ -179,167 +170,139 @@ def move_down(curr_idx, cell_list, logging, debug=False):
     else:
         next_idx = int(np.median(next_mask))-1
 
-    msg = 'move_down: idx {}, nonzero {}'.format(next_idx, nonzero)
-    # if debug:
-    #     print(msg)
+    return  next_idx, nonzero
+
+
+def move_up(curr_idx, cell_list):
+    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
+                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
+    cell_ext[0][1] -= extend_dist
+    cell_ext[3][1] -= extend_dist
+    if cell_ext[0][1] < 0:
+        cell_ext[0][1] = 0
+    if cell_ext[3][1] < 0:
+        cell_ext[3][1] = 0
+    # print(cell_ext)
+
+    next_idx, nonzero = calculate_overlap(curr_idx, cell_ext)
+    msg = 'move_up: {} -> {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
     logging.info(msg)
     return next_idx
 
-def move_right(curr_idx, cell_list, logging, debug=False):
-    cell_mask = np.zeros(grid_idx_map.shape, dtype=np.uint8)
-    # print(cell_list[i].polygon)
+def move_down(curr_idx, cell_list):
+    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
+                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
+    cell_ext[1][1] += extend_dist
+    cell_ext[2][1] += extend_dist
+    if cell_ext[1][1] > img_h:
+        cell_ext[1][1] = img_h
+    if cell_ext[2][1] > img_h:
+        cell_ext[2][1] = img_h
 
+    next_idx, nonzero = calculate_overlap(curr_idx, cell_ext)
+    msg = 'move_down: {} -> {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
+    logging.info(msg)
+    return next_idx
+
+def move_right(curr_idx, cell_list):
     cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
                         cell_list[curr_idx].x3, cell_list[curr_idx].x4])
     cell_ext[2][0] += extend_dist
     cell_ext[3][0] += extend_dist
-    # print(cell_ext)
+    if cell_ext[2][0] > img_w:
+        cell_ext[2][0] = img_w
+    if cell_ext[3][0] > img_w:
+        cell_ext[3][0] = img_w
 
-    cv2.drawContours(cell_mask, [cell_ext], -1, (255,255,255), -1)
-    next_mask = cell_mask & grid_idx_map 
-    next_mask = next_mask[next_mask!=curr_idx+1]
-    next_mask = next_mask[next_mask!=0]
-    # cv2.imwrite('next_mask.png', next_mask)
-    nonzero = np.count_nonzero(next_mask) 
-    if nonzero < th_overlap:
-        
-        next_idx = -1
-    else:
-        next_idx = int(np.median(next_mask))-1
-
-    msg = 'move_right: curr_idx {}, next_idx {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
-    # if debug:
-    #     print(msg)
+    next_idx, nonzero = calculate_overlap(curr_idx, cell_ext)
+    msg = 'move_right: {} -> {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
     logging.info(msg)
     return next_idx
 
-def layout_cells(landmark_coord, cell_list, logging, debug=False):
-    # global layout_map
-    layout_map = np.full((map_size,map_size), -1, dtype = np.int8)
+def move_left(curr_idx, cell_list):
+    cell_ext = np.vstack([cell_list[curr_idx].x1, cell_list[curr_idx].x2, 
+                        cell_list[curr_idx].x3, cell_list[curr_idx].x4])
+    cell_ext[0][0] -= extend_dist
+    cell_ext[1][0] -= extend_dist
+    if cell_ext[0][0] < 0:
+        cell_ext[0][0] = 0
+    if cell_ext[1][0] < 0:
+        cell_ext[1][0] = 0
 
-    top_left_mark = landmark_coord[0]
-    bottom_left_mark = landmark_coord[1]
-    top_right_mark = landmark_coord[3]
-
-    min_dist = 999999    
-    for i, cell in enumerate(cell_list):
-        # print(i, cell.top_left)
-        dx = cell.x1[0]-top_left_mark[0]
-        dy = cell.x1[1]-top_left_mark[1] 
-
-        dist = dx**2 + dy **2
-        if dist < min_dist:
-            min_dist = dist
-            first_cell = i
-
-    msg = 'first cell {}, dist {}'.format(first_cell, min_dist)
-    if debug:
-        print(msg)
+    next_idx, nonzero = calculate_overlap(curr_idx, cell_ext)
+    msg = 'move_left: {} -> {}, nonzero {}'.format(curr_idx, next_idx, nonzero)
     logging.info(msg)
+    return next_idx
 
-    # cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
-    layout_map[0, 0] = first_cell
-    col = 0
-    row = 1
-    num_rows = -1
-    all_Done = False
-    while True:
-        i = first_cell
+def gen_grid_map(cell_list):
+    mapsz = 30
+    layout_map = np.full((mapsz,mapsz), -1, dtype = np.int8)
+    cell_stack = []
+    x = mapsz //2
+    y = mapsz //2
+    first_cell = 0
+    cell_stack.append((first_cell, x, y))
 
-        while True: # find next row
-            next_idx = move_down(i, cell_list, logging, debug)
-            if next_idx < 0:
-                # if debug:
-                #     print('break, find_layout move_down count_nonzero <', th_overlap)
+    while cell_stack:
+        i, x, y = cell_stack.pop()
+        layout_map[y,x] = i
 
-                logging.info('break, find_layout move_down count_nonzero <{}'.format(th_overlap))
-                break
-
-            if num_rows ==-1 :
-                if cell_list[next_idx].x1[1] +5 > bottom_left_mark[1]:
-                    msg = 'bottom_left_mark bound, break'
-                    # if debug:
-                    #     print(msg)
-                    logging.info(msg)
-                    num_rows = row
-                    logging.info('num_rows '.format( num_rows))
-                    print('num_rows ', num_rows)
-                    break
-            elif row>=  num_rows:
-                msg = '> num_rows, break'
-                # if debug:
-                #     print(msg)
-                logging.info(msg)
-                break 
-
-     
-            # print(next_idx)
-            layout_map[row,col] = next_idx
-            cell_list[i].set_coord((row,col))
-            i = next_idx
-            row += 1   
-
-        # if col==0:
-        #     num_rows = row
-        #     print('num_rows ', num_rows)
-
-        row = 0
-        while True: # find next column
-            next_col = move_right(first_cell, cell_list, logging, debug)
-            if next_col < 0:
-                msg = 'continue, {} move_right {} count_nonzero < {}'.format(first_cell,next_col,th_overlap)
-                # if debug:
-                #     print(msg)
-
-                logging.info(msg)
-                row += 1
-                first_cell = layout_map[row,col] 
-                continue
-            elif cell_list[next_col].x4[0] -10 > top_right_mark[0]:
-                msg = 'continue, {} move_right {} next_col x4 x {} > top_right_mark x {}'.format(
-                    first_cell,next_col, cell_list[next_col].x4[0], top_right_mark[0])
-                # if debug:
-                #     print(msg)
-                logging.info(msg)
-
-
-                row += 1  
-                all_Done = True
-                break                
-                print(row, col)
-                first_cell = layout_map[row,col]   
-                           
-                continue
-            elif num_rows>0 and row >=  num_rows:
-                all_Done = True
-                break 
+        next_idx = move_down(i, cell_list)
+        if next_idx < 0:
+            logging.info('stop, move_down, overlap <{}'.format(th_overlap))
+        # elif cell_list[next_idx].x1[1] +5 > bottom_left_mark[1]:
+            # logging.info('stop, move_down, out of bound, bottom_left')
+        elif layout_map[y+1,x]==-1:
+            cell_stack.append((next_idx, x, y+1))
             
-            break
 
-        if all_Done:
-            break
+        next_idx = move_right(i, cell_list)
+        if next_idx < 0:
+            logging.info('stop, move_right, overlap <{}'.format(th_overlap))
+        # elif cell_list[next_idx].x4[0] +5 > top_right_mark[0]:
+            # logging.info('stop, move_right, out of bound, top_right')
+        elif layout_map[y,x+1]==-1:
+            cell_stack.append((next_idx, x+1, y))
+           
+        next_idx = move_up(i, cell_list)
+        if next_idx < 0:
+            logging.info('stop, move_up, overlap <{}'.format(th_overlap))
+        # elif cell_list[next_idx].x1[1] -5 < top_left_mark[1]:
+            # logging.info('stop, move_up, out of bound, top_left')
+        elif layout_map[y-1,x]==-1:
+            cell_stack.append((next_idx, x, y-1))
 
-        col += 1
-        first_cell = next_col
-        layout_map[row,col] = next_col
-        cell_list[next_col].set_coord((row,col))
-        row += 1 
+        next_idx = move_left(i, cell_list)
+        if next_idx < 0:
+            logging.info('stop, move_left, overlap <{}'.format(th_overlap))
+        # elif cell_list[next_idx].x1[0] -5 < top_left_mark[0]:
+            # logging.info('stop, move_left, out of bound, top_left')
+        elif layout_map[y,x-1]==-1:
+            cell_stack.append((next_idx, x-1, y))
 
-    col += 1
-    return layout_map, num_rows, col
+    idx_map = np.argwhere(layout_map>=0)   
+    row_idx = idx_map[:,0]
+    col_idx = idx_map[:,1]
+    x1 = min(col_idx)
+    y1 = min(row_idx)
+    x2 = max(col_idx)+1
+    y2 = max(row_idx)+1
+
+    # print(row_idx, min(row_idx), max(row_idx)) 
+    # print(col_idx, min(col_idx), max(col_idx)) 
+    # print(idx_map)
+
+    grid_map = layout_map[y1:y2, x1:x2]
+
+    return grid_map
 
 
-def detect_landmark(small, logging, debug=False):
+def detect_landmark(small):
     # small = cv2.pyrDown(frame)
     img_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
     th, landmark = cv2.threshold(img_gray, th_mark, 255, cv2.THRESH_BINARY)
 
-    # img_b, img_g, img_r = cv2.split(small) 
-    # th, bin_b = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY) 
-    # th, bin_g = cv2.threshold(img_g, th_mark, 255, cv2.THRESH_BINARY)
-    # th, bin_r = cv2.threshold(img_r, th_mark, 255, cv2.THRESH_BINARY)
-    # landmark = bin_b & bin_g #& bin_r
-    # median = cv2.medianBlur(landmark, 3)
+
     landmark = cv2.dilate(landmark, landmark_kernel, iterations = 1)
 
     # if debug:
@@ -388,24 +351,12 @@ def detect_landmark(small, logging, debug=False):
         # approx = cv2.approxPolyDP(con, 3,True)
         # landmark_list.append(approx)
 
-    landmark_centers = np.array(landmark_center_lst).reshape(-1, 2)
-    # print(landmark_centers)
+    landmarks = np.array(landmark_center_lst).reshape(-1, 2)
 
-    # for i, cc in enumerate(landmark_centers):
-    #     strText = '{}'.format(i)
-    #     cv2.putText(small, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,255,0))
-    #     cv2.circle(small,(cc[0], cc[1]),2,(0,0,255),2)
-
-    # cv2.imwrite('detect_landmark.jpg', small)
-    # if args.show_image:
-    #     cv2.imshow('detect_landmark',small)
-    #     key = cv2.waitKey(0)    
-
-
-    return landmark_centers
+    return landmarks
      
 
-def detect_grid(small, cell_list, logging, debug=False):
+def detect_grid(small, cell_list):
     global grid_idx_map
 
     gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
@@ -459,6 +410,7 @@ def detect_grid(small, cell_list, logging, debug=False):
         
     grid_idx_map = np.full(bin_img.shape, 0, dtype = np.uint8)
     # grid_c3 = cv2.cvtColor(grid_idx_map, cv2.COLOR_GRAY2BGR)
+    # cell_list.pop(22)
     for i, cc in enumerate(cell_list):
         cv2.drawContours(grid_idx_map, [cc.polygon], -1, (i+1,i+1,i+1), -1)
     cv2.imwrite('grid_idx_map.png', grid_idx_map)
@@ -549,7 +501,7 @@ def check_aspect_ratio(new_rect, landmark_center_lst):
 
     return ret
 
-def clean_polygon(comb, landmark_center_lst, logging):
+def clean_polygon(comb, landmark_center_lst):
     new_comb_lst = []
     num_marks = len(landmark_center_lst)
 
@@ -620,10 +572,10 @@ def clean_polygon(comb, landmark_center_lst, logging):
   
     return new_comb_lst
 
-def find_rect_combination(landmark_center_lst, logging):
+def find_rect_combination(landmark_center_lst):
     mark_lst = [i for i in range(len(landmark_center_lst))]
     comb = list(combinations(mark_lst, 4))
-    comb = clean_polygon(comb, landmark_center_lst, logging)
+    comb = clean_polygon(comb, landmark_center_lst)
     
     msg = 'clean_polygon \n {}'.format(comb)
     logging.info(msg) 
@@ -682,85 +634,124 @@ def find_rect_combination(landmark_center_lst, logging):
 
     return rect_lst
 
-def layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug=False):
 
-############# rect 0
-    vertex_lst = [ landmark_centers[i] for i in rect_lst[0]]
+
+def get_rect_map(grid_map, rect, landmarks, cell_list, small_grid_img):
+    vertex_lst = [ landmarks[i] for i in rect]
     rect_vertex = np.array(vertex_lst).reshape(-1, 2)
-    msg = 'layout_cell_2rect: rect_0: {}\n{}'.format(rect_lst[0], rect_vertex)
+    msg = 'get_rect_map: rect: {}\n{}'.format(rect, rect_vertex)
     logging.info(msg)
     print(msg)
 
-    landmark_coord1 = find_top_left_mark(rect_vertex, logging)  
-    layout_map1, row1, col1 = layout_cells(landmark_coord1, cell_list, logging, debug)
-    logging.info(layout_map1)
-    print(layout_map1, row1, col1)
+    landmark_coord = find_top_left_mark(rect_vertex)  
+    rect_coord = np.array(landmark_coord).reshape(-1, 2)
+    cv2.drawContours(small_grid_img, [rect_coord], -1, (0, 0, 0), 2)
 
-############# rect 1
-    vertex_lst = [ landmark_centers[i] for i in rect_lst[1]]
-    rect_vertex = np.array(vertex_lst).reshape(-1, 2)
-    msg = 'layout_cell_2rect: rect_1: {}\n{}'.format(rect_lst[1], rect_vertex)
-    logging.info(msg)
+    mark_cell_idx = [-1, -1, -1, -1]
+    for k, m in enumerate(landmark_coord):
+        min_dist = 999999
+        for i, cell in enumerate(cell_list):
+            if k==0:
+                dist = np.linalg.norm(np.array(m - cell.x1))
+            elif k==1:
+                 dist = np.linalg.norm(np.array(m - cell.x2))
+            elif k==2:
+                dist = np.linalg.norm(np.array(m - cell.x3))
+            elif k==3:
+                dist = np.linalg.norm(np.array(m - cell.x4))
+
+            if dist < min_dist:
+                min_dist = dist
+                idx = i
+
+        if min_dist < left_top_dist_gap:
+            mark_cell_idx[k] = idx
+
+    msg = 'mark_cell_idx {}'.format(mark_cell_idx)
     print(msg)
-
-    landmark_coord2 = find_top_left_mark(rect_vertex, logging)  
-    layout_map2, row2, col2 = layout_cells(landmark_coord2, cell_list, logging, debug)
-    logging.info(layout_map2)
-    print(layout_map2, row2, col2)
-
-############# intersect
-    intersect = list(set(rect_lst[0]) & set(rect_lst[1]))
-    msg = 'layout_cell_2rect: intersect {} '.format(intersect)
     logging.info(msg)
-    print(msg)
 
-    if len(intersect) !=1 :
-        msg = 'Error: layout_cell_2rect: {} & {}= {}, intersection point >1'.format(rect_lst[0], rect_lst[1], intersect)
-        logging.debug(msg)
-        print(msg)
-        layout_map = layout_map2
+    mark_cell_coord = []
+    for i in range(4):
+        if mark_cell_idx[i] != -1:
+            coord = np.argwhere(grid_map ==mark_cell_idx[i])
+            mark_cell_coord.append([mark_cell_idx[i], coord[0,0], coord[0,1]])
+        else:
+            mark_cell_coord.append([mark_cell_idx[i], -1, -1])
+
+    print('before fill:',mark_cell_coord)
+    logging.info('before fill: {}'.format(mark_cell_coord))
+    if mark_cell_coord[0][0]==-1 :
+        mark_cell_coord[0][1] = mark_cell_coord[3][1]  # row
+        mark_cell_coord[0][2] = mark_cell_coord[1][2]  # col
+    elif mark_cell_coord[1][0]==-1:
+        mark_cell_coord[1][1] = mark_cell_coord[2][1]  # row
+        mark_cell_coord[1][2] = mark_cell_coord[0][2]  # col
+    elif mark_cell_coord[2][0]==-1 :
+        mark_cell_coord[2][1] = mark_cell_coord[1][1]  # row
+        mark_cell_coord[2][2] = mark_cell_coord[3][2]  # col
+    elif mark_cell_coord[2][0]==-1 :
+        mark_cell_coord[3][1] = mark_cell_coord[0][1]  # row
+        mark_cell_coord[3][2] = mark_cell_coord[2][2]  # col
+
+    print('after fill:',mark_cell_coord)
+    logging.info('after fill: {}'.format(mark_cell_coord))
+
+    no_mark_cell = False
+    for i in range(4):
+        if mark_cell_coord[i][1]==-1:
+            no_mark_cell = True
+            logging.debug('mark_cell_coord {} = -1'.format(i))
+            break
+
+    if no_mark_cell:
+        return grid_map
     else:
-        inter_pt = landmark_centers[intersect[0]]
+        mask = np.full(grid_map.shape, True) # dtype=np.uint8)
+        row1 = mark_cell_coord[0][1]
+        row2 = mark_cell_coord[1][1]
+        col1 = mark_cell_coord[0][2]
+        col2 = mark_cell_coord[3][2]
 
-        if inter_pt in landmark_coord1[0]:
-            if inter_pt in landmark_coord2[1]:
-                logging.info('intersection pt on the top left of rect0, bottom left of rect1')
-                print('intersection pt on the top left of rect0, bottom left of rect1')
-                layout_map2[row2:row2+row1, 0:col1] = layout_map1[0:row1, 0:col1]  
-                layout_map = layout_map2
-            elif inter_pt in landmark_coord2[3]:
-                logging.info('intersection pt on the top left of rect0, top right of rect1')
-                print('intersection pt on the top left of rect0, top right of rect1')
-                layout_map2[0:row1, col2:col2+col1] = layout_map1[0:row1, 0:col1]  
-                layout_map = layout_map2
+        mask[row1:row2+1, col1:col2+1] = False
 
-        elif inter_pt in landmark_coord1[1]:
-            logging.info('intersection pt on the bottom left of rect0')
-            print('intersection pt on the bottom left of rect0')
-            layout_map1[row1:row1+row2, 0:col2] = layout_map2[0:row2, 0:col2]  
-            layout_map = layout_map1
-
-        elif inter_pt in landmark_coord1[2]:
-            logging.info('intersection pt on the bottom right of rect0')
-            print('intersection pt on the bottom right of rect0')
-            if row1 >= row2:
-                layout_map1[row1-row2:row1, col1:col1+col2] = layout_map2[0:row2, 0:col2]  
-                layout_map = layout_map1
-            else:
-                layout_map = np.full((map_size,map_size), -1, dtype = np.int8)
-                layout_map[row2-row1:row2, 0:col1] = layout_map1[0:row1, 0:col1] 
-                layout_map[0:row2, col1:col1+col2] = layout_map2[0:row2, 0:col2] 
-
-        elif inter_pt in landmark_coord1[3]:
-            logging.info('intersection pt on the top right of rect0')
-            print('intersection pt on the top right of rect0')
-            layout_map1[0:row2, col1:col1+col2] = layout_map2[0:row2, 0:col2]  
-            layout_map = layout_map1        
+        rect_map = grid_map.copy()
+        rect_map[mask] = -1
+        logging.info('rect_map: {}'.format(rect_map))
+        return rect_map
 
 
-    return layout_map, landmark_coord1, landmark_coord2
+def prune_grid_map(grid_map, landmarks, cell_list, small_grid_img):
+    num_landmarks = len(landmarks)
+    if num_landmarks > 4:
+        rect_lst = find_rect_combination(landmarks)    
+        if len(rect_lst) != 2:
+            msg = 'Error: number of rect should be 2, not {}, {}'.format(
+                len(rect_lst), rect_lst)
+            print(msg)
+            logging.debug(msg)
+            return None
 
-def identify_grid(landmark_img, grid_img, logging, debug=False):
+        print(rect_lst)
+
+        rect_map1 = get_rect_map(grid_map, rect_lst[0], landmarks, cell_list, small_grid_img)
+        rect_map2 = get_rect_map(grid_map, rect_lst[1], landmarks, cell_list, small_grid_img)
+        mask1 = rect_map1 <0
+        mask2 = rect_map2 <0
+        mask = (mask1 & mask2)
+        grid_map[mask] = -1
+        # print(mask )
+
+    else:
+        rect_lst = [0,1,2,3]
+        rect_map1 = get_rect_map(grid_map, rect_lst, landmarks, cell_list)
+        mask1 = rect_map1 <0
+        grid_map[mask1] = -1
+
+    return grid_map
+
+
+def identify_grid(landmark_img, grid_img):
     global img_w
     global img_h
 
@@ -773,8 +764,8 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
     img_h = small_landmark.shape[0]
     print('identify_grid: small image size (w, h): ', img_w, img_h)
 
-    landmark_centers = detect_landmark(small_landmark, logging, debug)
-    num_landmarks = len(landmark_centers)
+    landmarks = detect_landmark(small_landmark)
+    num_landmarks = len(landmarks)
 
     msg = 'num_landmarks: {}'.format(num_landmarks)
     logging.info(msg)
@@ -785,7 +776,7 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
         logging.debug(msg)
         return None
 
-    detect_grid(small_grid_img, cell_list, logging, debug)
+    detect_grid(small_grid_img, cell_list)
 
     for i, cc in enumerate(cell_list):
         cv2.drawContours(small_grid_img, [cc.polygon], -1, (0,255,0), 1)
@@ -795,44 +786,27 @@ def identify_grid(landmark_img, grid_img, logging, debug=False):
         center_lst.append(cc.center)
     # cv2.drawContours(small, landmark_list, -1, (0,0, 255), 1)
 
-    for i, cc in enumerate(landmark_centers):
+    for i, cc in enumerate(landmarks):
         strText = '[{}]'.format(i)
         cv2.putText(small_grid_img, strText, (cc[0], cc[1]), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255,0))
         cv2.circle(small_grid_img,(cc[0], cc[1]),2,(0,255,255),2)
 
-    cv2.imwrite('grid_detection.jpg', small_grid_img)
+    grid_map = gen_grid_map(cell_list)
+    print(grid_map)
+    logging.info(grid_map)
 
-    if debug:
+    grid_map = prune_grid_map(grid_map, landmarks, cell_list, small_grid_img)
+    logging.info('prune_grid_map rect_map: {}'.format(grid_map))
+    print('prune_grid_map rect_map: \n',grid_map)
+
+    cv2.imwrite('grid_detection.jpg', small_grid_img)
+    if args.show_image:
         cv2.imshow('grid_detection',small_grid_img)
         key = cv2.waitKey(0)
 
-    if num_landmarks > 4:
-        rect_lst = find_rect_combination(landmark_centers, logging)
-        if len(rect_lst) != 2:
-            msg = 'Error: number of rect combinations should be 2, not {}, {}'.format(
-                len(rect_lst), rect_lst)
-            print(msg)
-            logging.debug(msg)
-            return None
 
-        print(rect_lst)
-        layout_map, landmark_coord1, landmark_coord2 = layout_cell_2rect(rect_lst, landmark_centers, cell_list, logging, debug)
-        rect_coord1 = np.array(landmark_coord1).reshape(-1, 2)
-        rect_coord2 = np.array(landmark_coord2).reshape(-1, 2)
-        cv2.drawContours(small_grid_img, [rect_coord1, rect_coord2], -1, (0, 0, 0), 2)
 
-    else:
-        landmark_coord = find_top_left_mark(landmark_centers, logging)  
-        layout_map, row, col = layout_cells(landmark_coord, cell_list, logging, debug)
-        rect_coord = np.array(landmark_coord).reshape(-1, 2)
-        cv2.drawContours(small_grid_img, [rect_coord], -1, (0, 0, 0), 2)
-
-    logging.info(layout_map)
-    print(layout_map)
-
- 
-
-    return layout_map, center_lst
+    return grid_map, center_lst
 
 def main():
     global ini_disable_picam
@@ -848,7 +822,7 @@ def main():
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
     parser.add_argument('-fm', action="store", dest='landmark_name', default='3000.jpg', help='input landmark image name')
-    parser.add_argument('-fg', action="store", dest='grid_name', default='50000.jpg', help='input grid image name')    
+    parser.add_argument('-fg', action="store", dest='grid_name', default='grid_img.png', help='input grid image name')    
     args = parser.parse_args()
 
     print('disable_picam:', args.disable_picam)
@@ -909,7 +883,7 @@ def main():
         print('cannot read grid.jpg')
         logging.debug("cannot read grid.jpg")
     else:
-        identify_grid(landmark_img, grid_img, logging, args.show_debugmsg)
+        grid_map, center_lst =identify_grid(landmark_img, grid_img)
 
 
 if __name__ == "__main__":
