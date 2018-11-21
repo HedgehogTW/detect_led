@@ -232,9 +232,10 @@ def layout_cells(landmark_coord, cell_list, logging, debug=False):
             min_dist = dist
             first_cell = i
 
+    msg = 'first cell {}, dist {}'.format(first_cell, min_dist)
     if debug:
-        print('first cell ', first_cell)
-    logging.info('first cell {}'.format(first_cell))
+        print(msg)
+    logging.info(msg)
 
     # cell_mask = np.zeros(grid_idx_map.shape, dtype=int)
     layout_map[0, 0] = first_cell
