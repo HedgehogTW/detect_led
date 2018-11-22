@@ -7,6 +7,7 @@ from math import pi
 import argparse
 import logging
 import os, sys  
+import pickle
 import time  
 from time import localtime, strftime 
 from itertools import combinations 
@@ -27,8 +28,9 @@ else: # PC, read video
 
 args = None
 
-
-# import pathlib
+# 底下是 picamera 參數
+shutter_speed_landmark = 3000
+shutter_speed_grid = 50000
 
 # 底下是 detect_grid 參數
 grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
@@ -64,7 +66,7 @@ interior_angle_min = 60
 interior_angle_max = 120
 aspect_ratio_th = 0.6
 map_size = 30 # 要大於2倍 grid
-
+map_size_out = 20 # final output map size
 
 grid_idx_map = None
 
@@ -805,8 +807,15 @@ def identify_grid(landmark_img, grid_img):
     logging.info(grid_map)
 
     grid_map = prune_grid_map(grid_map, landmarks, cell_list, small_grid_img)
-    logging.info('prune_grid_map rect_map: {}'.format(grid_map))
-    print('prune_grid_map rect_map: \n',grid_map)
+
+    final_grid_map = np.full((map_size_out,map_size_out), -1, dtype = np.int8)
+    final_grid_map[:grid_map.shape[0],:grid_map.shape[1]] = grid_map[:,:]
+
+    logging.info('prune_grid_map : {}'.format(grid_map))
+    logging.info('final_grid_map : {}'.format(final_grid_map))
+
+    print('prune_grid_map : \n',grid_map)
+    print('final_grid_map : \n',final_grid_map)
 
     cv2.imwrite('grid_detection.jpg', small_grid_img)
     if args.show_image:
@@ -815,7 +824,7 @@ def identify_grid(landmark_img, grid_img):
 
 
 
-    return grid_map, center_lst
+    return final_grid_map, center_lst
 
 def main():
     global ini_disable_picam
@@ -866,23 +875,27 @@ def main():
         grid_img = cv2.imread(args.grid_name)
         
     else:
-        with picamera.PiCamera() as camera:
-            camera.awb_mode = 'off'
-            camera.awb_gains = (1.7,1.7)
-            camera.exposure_mode =  'off'
+        camera = PiCamera()
+        camera.awb_mode = 'off'
+        camera.awb_gains = (1.7,1.7)
+        camera.exposure_mode =  'off'
 
-            camera.iso = 100
-            camera.resolution = (1296,976)
+        camera.iso = 100
+        camera.resolution = (1296,976)
 
-            camera.framerate = 5
-            camera.shutter_speed = 3000
-            camera.capture('landmark.jpg')
+        camera.framerate = 5
+        camera.shutter_speed = shutter_speed_landmark
+        input("按 <ENTER> 開始拍定位燈號影像 ...")
+        camera.capture('landmark.jpg')
+        print('output landmark.jpg')
 
-            camera.shutter_speed = 50000
-            camera.capture('grid.jpg')
+        camera.shutter_speed = shutter_speed_grid
+        input("按 <ENTER> 開始拍淨空格子影像...")
+        camera.capture('grid.jpg')
+        print('output grid.jpg')
 
-            landmark_img = cv2.imread('landmark.jpg')
-            grid_img = cv2.imread('grid.jpg')
+        landmark_img = cv2.imread('landmark.jpg') #'3000.jpg'
+        grid_img = cv2.imread('grid.jpg') #'50000.jpg
 
 
     if landmark_img is None:
@@ -894,6 +907,20 @@ def main():
     else:
         grid_map, center_lst =identify_grid(landmark_img, grid_img)
 
+        f = open('grid_map.pickle', 'wb')
+        pickle.dump(grid_map, f)
+        f.close()
+
+        f = open('center_lst.pickle', 'wb')
+        pickle.dump(center_lst, f)
+        f.close()
+
+        print('output file: grid_map.pickle')        
+        print('output file: center_lst.pickle')  
+        print('output file: img_rb.jpg') 
+        print('output file: img_rb_thresh.jpg') 
+        print('output file: grid_idx_map.png') 
+        print('output file: grid_detection.jpg') 
 
 if __name__ == "__main__":
     main()

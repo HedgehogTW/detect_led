@@ -531,28 +531,34 @@ def main():
         client.publish(mqtt_topic, 'video start', qos)
     
   
-    parktime_fname = 'grid_map.pickle'
-    parttm_path = pathlib.Path(parktime_fname)    
-    if parttm_path.is_file():
-        print('{} exists'.format(parktime_fname))
-        f = open(parktime_fname, 'rb')
+    fname = 'grid_map.pickle'
+    pickle_path = pathlib.Path(fname)    
+    if pickle_path.is_file():        
+        f = open(fname, 'rb')
         layout_map = pickle.load(f)
         f.close()
+        print('Load {} ok'.format(fname))
+        print(layout_map)
+        logging.info('Load {} ok'.format(fname))
+        logging.info(layout_map)        
     else:
-        print('{} does not exist'.format(parktime_fname))
-        logging.debug('{} does not exist'.format(parktime_fname))
+        print('{} does not exist'.format(fname))
+        logging.debug('{} does not exist'.format(fname))
         return
 
-    parktime_fname = 'center_lst.pickle'
-    parttm_path = pathlib.Path(parktime_fname)    
-    if parttm_path.is_file():
-        print('{} exists'.format(parktime_fname))
-        f = open(parktime_fname, 'rb')
+    fname = 'center_lst.pickle'
+    pickle_path = pathlib.Path(fname)    
+    if pickle_path.is_file():        
+        f = open(fname, 'rb')
         center_lst = pickle.load(f)
         f.close()
+        print('Load {} ok'.format(fname))
+        print(center_lst)
+        logging.info('Load {} ok'.format(fname))
+        logging.info(center_lst)
     else:
-        print('{} does not exist'.format(parktime_fname))
-        logging.debug('{} does not exist'.format(parktime_fname))
+        print('{} does not exist'.format(fname))
+        logging.debug('{} does not exist'.format(fname))
         return
 
     grid_idx_map = cv2.imread('grid_idx_map.png')
