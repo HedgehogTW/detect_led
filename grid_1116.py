@@ -302,10 +302,7 @@ def gen_grid_map(cell_list):
 def detect_landmark(small):
     # small = cv2.pyrDown(frame)
     # img_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    if args.disable_picam:
-        img_b, img_g, img_r = cv2.split(small)  
-    else:
-        img_r, img_g, img_b = cv2.split(small)  
+    img_b, img_g, img_r = cv2.split(small)  
 
     th, landmark = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY)
     if args.show_image:
@@ -855,8 +852,8 @@ def main():
     parser.add_argument('--noshow_image', action="store_false", dest='show_image', default=ini_show_image, help='no show debug image')
     parser.add_argument('--show_debugmsg', action="store_true", dest='show_debugmsg', default=ini_show_debugmsg, help='show debug message')
     parser.add_argument('--noshow_debugmsg', action="store_false", dest='show_debugmsg', default=ini_show_debugmsg, help='no show debug message')
-    parser.add_argument('-fm', action="store", dest='landmark_name', default='3000.jpg', help='input landmark image name')
-    parser.add_argument('-fg', action="store", dest='grid_name', default='50000.jpg', help='input grid image name')    
+    parser.add_argument('-fm', action="store", dest='landmark_name', default='landmark.jpg', help='input landmark image name')
+    parser.add_argument('-fg', action="store", dest='grid_name', default='grid.jpg', help='input grid image name')    
     args = parser.parse_args()
 
     print('disable_picam:', args.disable_picam)
