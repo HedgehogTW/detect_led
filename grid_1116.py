@@ -301,16 +301,24 @@ def gen_grid_map(cell_list):
 
 def detect_landmark(small):
     # small = cv2.pyrDown(frame)
-    img_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    th, landmark = cv2.threshold(img_gray, th_mark, 255, cv2.THRESH_BINARY)
+    # img_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    if args.disable_picam:
+        img_b, img_g, img_r = cv2.split(small)  
+    else:
+        img_r, img_g, img_b = cv2.split(small)  
 
+    th, landmark = cv2.threshold(img_b, th_mark, 255, cv2.THRESH_BINARY)
+    if args.show_image:
+        cv2.imshow('threshold',landmark)
+        # cv2.imshow('bin_color',bin_color)
+        key = cv2.waitKey(0)   
 
     landmark = cv2.dilate(landmark, landmark_kernel, iterations = 1)
 
-    # if debug:
-    #     cv2.imshow('landmark',landmark)
-    #     # cv2.imshow('bin_color',bin_color)
-    #     key = cv2.waitKey(0)    
+    if args.show_image:
+        cv2.imshow('landmark',landmark)
+        # cv2.imshow('bin_color',bin_color)
+        key = cv2.waitKey(0)    
 
     _, contours, hierarchy = cv2.findContours(landmark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         
@@ -686,6 +694,9 @@ def get_rect_map(grid_map, rect, landmarks, cell_list, small_grid_img):
     for i in range(4):
         if mark_cell_idx[i] != -1:
             coord = np.argwhere(grid_map ==mark_cell_idx[i])
+            msg = 'find mark_cell_idx {}, coord {} '.format(mark_cell_idx[i], coord)
+            print(msg)
+            logging.info(msg)
             mark_cell_coord.append([mark_cell_idx[i], coord[0,0], coord[0,1]])
         else:
             mark_cell_coord.append([mark_cell_idx[i], -1, -1])
@@ -806,6 +817,11 @@ def identify_grid(landmark_img, grid_img):
     print(grid_map)
     logging.info(grid_map)
 
+    cv2.imwrite('grid_detection0.jpg', small_grid_img)
+    if args.show_image:
+        cv2.imshow('grid_detection0',small_grid_img)
+        key = cv2.waitKey(0)
+
     grid_map = prune_grid_map(grid_map, landmarks, cell_list, small_grid_img)
 
     final_grid_map = np.full((map_size_out,map_size_out), -1, dtype = np.int8)
@@ -817,9 +833,9 @@ def identify_grid(landmark_img, grid_img):
     print('prune_grid_map : \n',grid_map)
     print('final_grid_map : \n',final_grid_map)
 
-    cv2.imwrite('grid_detection.jpg', small_grid_img)
+    cv2.imwrite('grid_detection1.jpg', small_grid_img)
     if args.show_image:
-        cv2.imshow('grid_detection',small_grid_img)
+        cv2.imshow('grid_detection1',small_grid_img)
         key = cv2.waitKey(0)
 
 
