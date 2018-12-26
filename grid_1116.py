@@ -37,18 +37,18 @@ grid_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
 landmark_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
 th_block_size = 33
 th_c = -1 #-10
-cell_area_min = 1500
+cell_area_min = 850
 cell_area_max = 10000
-cell_ratio_min = 0.15
+cell_ratio_min = 0.12
 cell_ratio_max = 0.55
 cell_compact_th = 50
-polygon_dist = 15
+polygon_dist = 10
 
 
 # 底下是 detect_landmark 參數
 th_mark = 60 # 240
 mark_area_min = 40
-mark_area_max = 160
+mark_area_max = 190
 mark_ratio_min = 0.75
 
 # 底下是 find_layout 參數
@@ -165,7 +165,7 @@ def calculate_overlap(curr_idx, cell_ext):
     next_mask = cell_mask & grid_idx_map 
     next_mask = next_mask[next_mask!=curr_idx+1]
     next_mask = next_mask[next_mask!=0]
-    # cv2.imwrite('next_mask.png', next_mask)
+    cv2.imwrite('next_mask.jpg', next_mask)
     nonzero = np.count_nonzero(next_mask)
     if  nonzero < th_overlap:
         next_idx = -1
@@ -312,10 +312,7 @@ def detect_landmark(small):
 
     landmark = cv2.dilate(landmark, landmark_kernel, iterations = 1)
 
-    if args.show_image:
-        cv2.imshow('landmark',landmark)
-        # cv2.imshow('bin_color',bin_color)
-        key = cv2.waitKey(0)    
+  
 
     _, contours, hierarchy = cv2.findContours(landmark, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         
@@ -359,6 +356,18 @@ def detect_landmark(small):
         # landmark_list.append(approx)
 
     landmarks = np.array(landmark_center_lst).reshape(-1, 2)
+    logging.info(landmarks)  
+    if args.show_image:
+        for i in range(landmarks.shape[0]):
+            x = landmarks[i, 0]
+            y = landmarks[i, 1]
+            cv2.circle(landmark,(x, y),6,(54,117,138),-1)
+
+        cv2.imshow('landmark',landmark)
+        # cv2.imshow('bin_color',bin_color)
+        key = cv2.waitKey(0)  
+    
+    cv2.imwrite('landmark_detection.jpg', landmark)
 
     return landmarks
      
@@ -381,23 +390,33 @@ def detect_grid(small, cell_list):
     cv2.imwrite('img_rb_thresh.jpg', bin_img)
     
     _, contours, hierarchy = cv2.findContours(bin_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-
+    
     if args.show_image:
         bin_color = cv2.cvtColor(bin_img,cv2.COLOR_GRAY2BGR)
         cv2.drawContours(bin_color, contours, -1, (0,255,0), 1)
-        cv2.imshow('detect_grid',bin_color)
+        cv2.imshow('grid_contour',bin_color)
         key = cv2.waitKey(0)    
     
     center_lst = []    
-    for con in contours:
+    for i, con in enumerate(contours):
         area = cv2.contourArea(con)
         if area < cell_area_min or area > cell_area_max:
+            msg = 'con {}, area {} not in range ({},{})'.format(i, area, cell_area_min, cell_area_max)
+            # print(msg)
+            logging.info(msg)              
             continue
+
+        M = cv2.moments(con)
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
 
         clen = len(con)
         compact = (clen * clen) / area;
         # print('clen:', clen, compact)
         if compact > cell_compact_th:
+            msg = 'con {} [{},{}], compact {} > cell_compact_th {}'.format(i, cx,cy,compact, cell_compact_th)
+            # print(msg)
+            logging.info(msg)  
             continue
 
         # rect = cv2.minAreaRect(con)
@@ -407,15 +426,15 @@ def detect_grid(small, cell_list):
         # if ratio < cell_ratio_min or ratio > cell_ratio_max:
         #     continue
 
-        M = cv2.moments(con)
-        cx = int(M["m10"] / M["m00"])
-        cy = int(M["m01"] / M["m00"])
+
         # print(cx, cy)
         # center_lst.append([cx,cy])
         approx = cv2.approxPolyDP(con, polygon_dist,True)
         # print('approx nodes:', len(approx), approx)
-        if len(approx) != 4:
-            print('X approx nodes:', len(approx))
+        if len(approx) not in [4,5]:
+            msg = 'con {} [{},{}], X approx nodes: {}'.format(i,cx,cy, len(approx))
+            print(msg)
+            logging.info(msg)  
             continue
 
         approx_arr = np.array(approx).reshape(-1, 2)
@@ -429,7 +448,14 @@ def detect_grid(small, cell_list):
     # cell_list.pop(22)
     for i, cc in enumerate(cell_list):
         cv2.drawContours(grid_idx_map, [cc.polygon], -1, (i+1,i+1,i+1), -1)
-    cv2.imwrite('grid_idx_map.png', grid_idx_map)
+    grid_idx_map_1 = grid_idx_map.copy()
+    for i, cc in enumerate(cell_list):
+        cv2.drawContours(grid_idx_map_1, [cc.polygon], -1, (255,255,255), 1)
+    cv2.imwrite('grid_idx_map.png', grid_idx_map_1)
+
+    if args.show_image:
+        cv2.imshow('grid_idx_map_1',grid_idx_map_1)
+        key = cv2.waitKey(0)    
 
     msg = 'find {} grid, output to grid_idx_map.png'.format(len(cell_list))
     print(msg)
@@ -736,7 +762,7 @@ def get_rect_map(grid_map, rect, landmarks, cell_list, small_grid_img):
 
         rect_map = grid_map.copy()
         rect_map[mask] = -1
-        logging.info('rect_map: {}'.format(rect_map))
+        logging.info('rect_map:\n{}'.format(rect_map))
         return rect_map
 
 
@@ -763,7 +789,7 @@ def prune_grid_map(grid_map, landmarks, cell_list, small_grid_img):
 
     else:
         rect_lst = [0,1,2,3]
-        rect_map1 = get_rect_map(grid_map, rect_lst, landmarks, cell_list)
+        rect_map1 = get_rect_map(grid_map, rect_lst, landmarks, cell_list, small_grid_img)
         mask1 = rect_map1 <0
         grid_map[mask1] = -1
 
@@ -785,6 +811,13 @@ def identify_grid(landmark_img, grid_img):
 
     landmarks = detect_landmark(small_landmark)
     num_landmarks = len(landmarks)
+    for i in range(landmarks.shape[0]):
+        x = landmarks[i, 0]
+        y = landmarks[i, 1]
+        cv2.circle(small_grid_img,(x, y),5,(54,117,138),-1)
+
+    # cv2.imshow('grid_detection circle',small_grid_img)
+    # key = cv2.waitKey(0)
 
     msg = 'num_landmarks: {}'.format(num_landmarks)
     logging.info(msg)
@@ -794,6 +827,7 @@ def identify_grid(landmark_img, grid_img):
         print(msg)
         logging.debug(msg)
         return None
+
 
     detect_grid(small_grid_img, cell_list)
 
@@ -824,8 +858,8 @@ def identify_grid(landmark_img, grid_img):
     final_grid_map = np.full((map_size_out,map_size_out), -1, dtype = np.int8)
     final_grid_map[:grid_map.shape[0],:grid_map.shape[1]] = grid_map[:,:]
 
-    logging.info('prune_grid_map : {}'.format(grid_map))
-    logging.info('final_grid_map : {}'.format(final_grid_map))
+    logging.info('prune_grid_map : \n{}'.format(grid_map))
+    logging.info('final_grid_map : \n{}'.format(final_grid_map))
 
     print('prune_grid_map : \n',grid_map)
     print('final_grid_map : \n',final_grid_map)
@@ -933,7 +967,9 @@ def main():
         print('output file: img_rb.jpg') 
         print('output file: img_rb_thresh.jpg') 
         print('output file: grid_idx_map.png') 
-        print('output file: grid_detection.jpg') 
+        print('output file: grid_detection0.jpg') 
+        print('output file: grid_detection1.jpg')
+        print('output file: landmark_detection.jpg')
 
 if __name__ == "__main__":
     main()
