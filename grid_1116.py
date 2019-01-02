@@ -451,7 +451,7 @@ def detect_grid(small, cell_list):
     grid_idx_map_1 = grid_idx_map.copy()
     for i, cc in enumerate(cell_list):
         cv2.drawContours(grid_idx_map_1, [cc.polygon], -1, (255,255,255), 1)
-    cv2.imwrite('grid_idx_map.png', grid_idx_map_1)
+    cv2.imwrite('grid_idx_map.png', grid_idx_map)
 
     if args.show_image:
         cv2.imshow('grid_idx_map_1',grid_idx_map_1)
