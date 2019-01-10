@@ -246,6 +246,10 @@ def locate_position():
 
           
         coord = np.argwhere(layout_map ==idx)
+        if coord.size == 0:
+            logging.info('cannot find idx {} in layout_map'.format(idx))    
+            print('cannot find idx {} in layout_map'.format(idx))            
+
         coord = np.squeeze(coord)
 
         str_position = '{}'.format(coord)
@@ -262,11 +266,14 @@ def process_frame(frame):
     numBlobs = find_blobs(frame)
     locate_position()
 
-    if args.show_debugmsg:
-        print('find_blobs:', numBlobs)  
-    logging.info('find_blobs:{}'.format(numBlobs))
+    if numBlobs > 0:
+        if args.show_debugmsg:
+            print('find_blobs:', numBlobs)  
+        logging.info('find_blobs:{}'.format(numBlobs))
 
-    for j, blob in enumerate(blob_lst):       
+    for j, blob in enumerate(blob_lst):   
+        if blob['grid']=='[]':  
+            continue
         payload = "LED ON {}--{} {}".format(blob['grid'], blob['area'], blob['color'])   
         logging.info(payload) 
         if not args.disable_mqtt:  
@@ -540,7 +547,7 @@ def main():
         print('Load {} ok'.format(fname))
         print(layout_map)
         logging.info('Load {} ok'.format(fname))
-        logging.info(layout_map)        
+        logging.info('layout_map... \n{}'.format(layout_map))
     else:
         print('{} does not exist'.format(fname))
         logging.debug('{} does not exist'.format(fname))
