@@ -250,7 +250,7 @@ def locate_position():
             logging.info('cannot find idx {} in layout_map'.format(idx))    
             print('cannot find idx {} in layout_map'.format(idx))            
 
-        coord = np.squeeze(coord)
+        coord = np.squeeze(coord) + [1,1]
 
         str_position = '{}'.format(coord)
         blob['grid'] = str_position
@@ -470,6 +470,46 @@ def clean_oldlog_files(logpath):
             print('ERROR: clean_oldlog_files:', f)
             continue
 
+def transform_gridmap():
+    global layout_map
+    row_sum = np.sum(layout_map, axis=0)
+    col_sum = np.sum(layout_map, axis=1)
+    rows = layout_map.shape[0]
+    cols = layout_map.shape[1]
+    # print(layout_map.shape)
+    # print(row_sum)
+    # print(col_sum)
+    start_col = 0
+    for i in range(cols):
+        if row_sum[i] != -cols:
+            start_col = i
+            break
+
+    start_row = 0
+    for i in range(rows):
+        if col_sum[i] != -rows:
+            start_row = i
+            break
+
+    end_row = 0
+    for i in range(rows-1, -1, -1):
+        if col_sum[i] != -rows:
+            end_row = i
+            break    
+ 
+    s = 'start_col {}, start_row {}, end_row {}'.format(start_col, start_row, end_row)
+    logging.info(s)
+    print(s)
+
+    trans_grid_map = np.full(layout_map.shape, -1, dtype = np.int8)
+    h = end_row-start_row+1
+    w = cols - start_col 
+    for r in range(end_row, start_row-1, -1):
+        trans_grid_map[h-r,0:w] = layout_map[r,start_col:] 
+
+    layout_map = trans_grid_map
+    print('after transform_gridmap ...\n{}'.format(layout_map))
+    logging.info('after transform_gridmap ...\n{}'.format(layout_map))
 
 def main():
     global client
@@ -548,6 +588,7 @@ def main():
         print(layout_map)
         logging.info('Load {} ok'.format(fname))
         logging.info('layout_map... \n{}'.format(layout_map))
+        transform_gridmap()
     else:
         print('{} does not exist'.format(fname))
         logging.debug('{} does not exist'.format(fname))
