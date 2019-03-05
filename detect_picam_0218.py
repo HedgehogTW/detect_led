@@ -253,10 +253,10 @@ def locate_position():
 
         coord = np.squeeze(coord) + [1,1]
 
-        str_position = '{}'.format(coord)
+        str_position = '[{} {}]'.format(coord[0],coord[1])
         blob['grid'] = str_position
-        logging.info('locate_position: idx {}, {}'.format(idx, coord))            
-        print('locate_position:idx {}, {}'.format(idx, coord))
+        logging.info('locate_position: idx {}, {}'.format(idx, str_position))            
+        print('locate_position:idx {}, {}'.format(idx, str_position))
 
 
 def process_frame(frame):
